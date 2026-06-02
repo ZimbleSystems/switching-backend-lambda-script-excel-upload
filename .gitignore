@@ -1,5 +1,9 @@
-# --- Build / deploy artifacts (rebuilt in CI or locally; not source) ---
-local-dev/build/
+# --- Not production (local dev, samples, local test runner) ---
+local-dev/
+local_runner.py
+sample/
+
+# --- Build / deploy artifacts (rebuilt in CI or on deploy host; not source) ---
 package.zip
 *.zip
 python/
