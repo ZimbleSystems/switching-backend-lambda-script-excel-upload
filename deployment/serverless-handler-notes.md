@@ -29,9 +29,8 @@ cp -r src lambda_function.py build/
 cd build && zip -r ../package.zip . && cd ..
 ```
 
-The zip will be ~30–40 MB because of `pandas` + `pymongo`. If that exceeds
-limits, switch to a **Lambda Layer** for `pandas` (e.g. AWS-managed
-Klayers/pandas) or replace `pandas` with raw `openpyxl` parsing.
+The zip is typically ~5–15 MB (`pymongo` + `openpyxl`). Parsing uses
+`openpyxl` only (no pandas).
 
 ## Required IAM permissions
 
@@ -80,4 +79,4 @@ See `env.example`.
   `MongoWriter`.
 - Add SNS/Slack notification on failures by inspecting the returned
   `ingest_report`.
-- Replace `pandas` with `openpyxl` only to shrink the package.
+- Dependencies are already minimal (`openpyxl` + `pymongo`).
