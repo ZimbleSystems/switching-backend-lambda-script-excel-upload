@@ -1,0 +1,55 @@
+# --- Build / deploy artifacts (rebuilt in CI or locally; not source) ---
+local-dev/build/
+package.zip
+*.zip
+python/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.cover
+
+# --- Secrets / local env (use deployment/env.example as template) ---
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# --- Excel lock / temp files ---
+~$*
+*.tmp
+*.bak
+
+# --- Generated run outputs ---
+sample/sample-run-output.json
+*.report.json
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+*.swo
+
+# --- Optional: large local layer experiments ---
+layer/
+layers/

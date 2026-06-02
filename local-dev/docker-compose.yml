@@ -1,0 +1,38 @@
+services:
+  localstack:
+    image: localstack/localstack:3
+    container_name: excel-ingest-localstack
+    ports:
+      - "4566:4566"          # edge port (S3, Lambda, IAM, Logs, Events ...)
+      - "4510-4559:4510-4559"
+    environment:
+      - SERVICES=s3,lambda,iam,logs,events
+      - DEBUG=1
+      - LAMBDA_EXECUTOR=docker
+      - LAMBDA_DOCKER_NETWORK=excel-ingest-net
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LS_LOG=warn
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "localstack-data:/var/lib/localstack"
+    networks:
+      - excel-ingest-net
+
+  mongo:
+    image: mongo:7
+    container_name: excel-ingest-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - "mongo-data:/data/db"
+    networks:
+      - excel-ingest-net
+
+networks:
+  excel-ingest-net:
+    name: excel-ingest-net
+    driver: bridge
+
+volumes:
+  localstack-data:
+  mongo-data:
