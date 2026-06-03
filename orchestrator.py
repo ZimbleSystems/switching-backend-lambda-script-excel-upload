@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set
 
-from .errors import ValidationError
-from .mongo_writer import MongoWriter
-from .schemas import SHEETS
-from .defaults import fill_missing_required
-from .validators import validate_row
+from errors import ValidationError
+from mongo_writer import MongoWriter
+from schemas import SHEETS
+from defaults import fill_missing_required
+from validators import validate_row
 
 
 def _sheets_in_order() -> List[str]:

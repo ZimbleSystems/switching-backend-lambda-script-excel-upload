@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from .transformers import transform
+from transformers import transform
 
 
 def _blank(v: Any) -> bool:

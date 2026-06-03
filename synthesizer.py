@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .nested_builders import (
+from nested_builders import (
     block_flag_to_bool,
     build_address,
     build_channels,
@@ -17,9 +17,9 @@ from .nested_builders import (
     build_store_chain_list,
     build_store_tables,
 )
-from .defaults import auto_id, fill_missing_required
-from .schemas import SHEETS
-from .transformers import transform_all
+from defaults import auto_id, fill_missing_required
+from schemas import SHEETS
+from transformers import transform_all
 
 
 def _is_blank(v: Any) -> bool:

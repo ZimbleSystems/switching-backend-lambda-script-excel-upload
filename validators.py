@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
-from .defaults import default_for_required
-from .errors import ValidationError
+from defaults import default_for_required
+from errors import ValidationError
 
 
 _TYPE_COERCERS = {

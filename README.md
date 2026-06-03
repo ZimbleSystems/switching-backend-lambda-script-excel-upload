@@ -36,10 +36,21 @@ Ingest order: parents (`demographic`, criteria, connector, chain) → `connector
 ```
 excel-ingest-lambda/
 ├── lambda_function.py      # Handler: lambda_function.lambda_handler
+├── excel_parser.py
+├── mongo_writer.py
+├── orchestrator.py
+├── synthesizer.py
+├── schemas.py
+├── validators.py
+├── transformers.py
+├── nested_builders.py
+├── defaults.py
+├── errors.py
 ├── requirements.txt
-├── src/                    # Application code
 └── README.md
 ```
+
+All modules are at the **same level** as `lambda_function.py` (no `src/` folder).
 
 Not in git (local only): `local-dev/`, `deployment/`, `sample/`, `local_runner.py`.
 
@@ -55,14 +66,15 @@ docker run --rm \
   python:3.11-slim \
   sh -ec '
     pip install -q -r requirements.txt -t /tmp/pkg
-    cp -r src /tmp/pkg/src
-    cp lambda_function.py /tmp/pkg/
+    cp lambda_function.py excel_parser.py mongo_writer.py orchestrator.py \
+       synthesizer.py validators.py schemas.py nested_builders.py \
+       transformers.py defaults.py errors.py /tmp/pkg/
     cd /tmp/pkg && apt-get update -qq && apt-get install -qq -y zip >/dev/null
     zip -qr /work/package.zip .
   '
 ```
 
-Upload **`package.zip`** to Lambda after every change to `src/` or `lambda_function.py`.
+Upload **`package.zip`** to Lambda after any change to the `.py` modules. Prefer `local-dev/build_zip.sh`.
 
 On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local copy of the dev scripts.
 
