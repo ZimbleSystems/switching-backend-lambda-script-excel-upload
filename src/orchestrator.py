@@ -1,25 +1,31 @@
 """
 Dependency-aware ingestion orchestrator.
 
-Processes sheets in `order` ascending. Within an order group, sheets are
-independent and processed in registration order. For each row we:
+Processes each Excel worksheet tab as a bundle in tab order. Within a bundle,
+sheets run in `order` ascending (demographic → criteria → chain → merchant → store).
 
-  1. validate field-level rules (validators.validate_row)
-  2. resolve parent IDs (skip the row with an explicit error if any
-     parent does not exist in Mongo and was not produced in this run)
-  3. upsert into the target collection
-
-A structured report is returned so the Lambda can log it / surface it.
+For each row:
+  1. validate field-level rules
+  2. skip duplicate primary keys already written in this workbook run
+  3. cascade-skip linked demographics when parent merchant/chain is duplicate
+  4. resolve parent IDs (skip if parent missing)
+  5. upsert into Mongo
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Union
 
-from errors import ValidationError
 from mongo_writer import MongoWriter
 from schemas import SHEETS
 from defaults import coerce_int, fill_missing_required
 from validators import validate_row
+
+_INGEST_META_KEYS = frozenset({
+    "_source_worksheet",
+    "_linked_merchant_id",
+    "_linked_chain_id",
+    "_no_merchant_demographic",
+})
 
 
 def _normalize_criteria_fields(cleaned: Dict[str, Any]) -> None:
@@ -50,20 +56,44 @@ class IngestReport:
         self.errors: List[Dict[str, Any]] = []
         self.created_ids: Dict[str, Set[str]] = {}
 
+    def _error_entry(
+        self,
+        sheet: str,
+        row_idx: int,
+        errors: List[str],
+        worksheet: str | None = None,
+    ) -> Dict[str, Any]:
+        entry: Dict[str, Any] = {"sheet": sheet, "row": row_idx, "errors": errors}
+        if worksheet:
+            entry["worksheet"] = worksheet
+        return entry
+
     def add_success(self, sheet: str, id_value: str) -> None:
         self.summary.setdefault(sheet, {"success": 0, "failed": 0, "skipped": 0})
         self.summary[sheet]["success"] += 1
         self.created_ids.setdefault(sheet, set()).add(str(id_value))
 
-    def add_failure(self, sheet: str, row_idx: int, errors: List[str]) -> None:
+    def add_failure(
+        self,
+        sheet: str,
+        row_idx: int,
+        errors: List[str],
+        worksheet: str | None = None,
+    ) -> None:
         self.summary.setdefault(sheet, {"success": 0, "failed": 0, "skipped": 0})
         self.summary[sheet]["failed"] += 1
-        self.errors.append({"sheet": sheet, "row": row_idx, "errors": errors})
+        self.errors.append(self._error_entry(sheet, row_idx, errors, worksheet))
 
-    def add_skip(self, sheet: str, row_idx: int, reason: str) -> None:
+    def add_skip(
+        self,
+        sheet: str,
+        row_idx: int,
+        reason: str,
+        worksheet: str | None = None,
+    ) -> None:
         self.summary.setdefault(sheet, {"success": 0, "failed": 0, "skipped": 0})
         self.summary[sheet]["skipped"] += 1
-        self.errors.append({"sheet": sheet, "row": row_idx, "errors": [reason]})
+        self.errors.append(self._error_entry(sheet, row_idx, [reason], worksheet))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -86,77 +116,174 @@ def _parent_exists(
     return writer.exists(parent_cfg["collection"], parent_id_field_bson, parent_id_value)
 
 
+def _row_worksheet(row: Dict[str, Any]) -> str | None:
+    ws = row.get("_source_worksheet")
+    return str(ws) if ws else None
+
+
+def _should_skip_duplicate_pk(
+    sheet: str,
+    id_value: Any,
+    created_ids: Dict[str, Set[str]],
+) -> bool:
+    return str(id_value) in created_ids.get(sheet, set())
+
+
+def _cascade_skip_demographic(row: Dict[str, Any], created_ids: Dict[str, Set[str]]) -> str | None:
+    """Return skip reason if this demographic row should not be written."""
+    demo_type = row.get("demographic_type")
+    if demo_type == "M":
+        linked = row.get("_linked_merchant_id")
+        if linked and str(linked) in created_ids.get("merchant", set()):
+            return (
+                f"merchant demographic skipped: merchant_id={linked!r} "
+                "already persisted earlier in this workbook"
+            )
+    if demo_type == "C":
+        linked = row.get("_linked_chain_id")
+        if linked and str(linked) in created_ids.get("chain", set()):
+            return (
+                f"chain demographic skipped: chain_id={linked!r} "
+                "already persisted earlier in this workbook"
+            )
+    return None
+
+
+def _build_cleaned_document(
+    row: Dict[str, Any],
+    cfg: Dict[str, Any],
+    cleaned: Dict[str, Any],
+) -> Dict[str, Any]:
+    for k, v in row.items():
+        if k in _INGEST_META_KEYS or k in cfg["schema"] or v is None:
+            continue
+        if k.startswith("_"):
+            cleaned[k.lstrip("_")] = v
+        else:
+            cleaned[k] = v
+    return cleaned
+
+
+def _process_row(
+    sheet: str,
+    row: Dict[str, Any],
+    row_idx: int,
+    writer: MongoWriter,
+    report: IngestReport,
+) -> None:
+    cfg = SHEETS[sheet]
+    worksheet = _row_worksheet(row)
+
+    fill_missing_required(row, cfg["schema"])
+    cleaned, errors = validate_row(row, cfg["schema"])
+    if errors:
+        report.add_failure(sheet, row_idx, [str(e) for e in errors], worksheet)
+        return
+
+    cleaned = _build_cleaned_document(row, cfg, cleaned)
+
+    cascade_reason = _cascade_skip_demographic(row, report.created_ids) if sheet == "demographic" else None
+    if cascade_reason:
+        report.add_skip(sheet, row_idx, cascade_reason, worksheet)
+        return
+
+    parent_missing = False
+    for fk_col, parent_sheet in cfg["parents"].items():
+        if fk_col == "merchant_demographics_id" and row.get("_no_merchant_demographic"):
+            continue
+        fk_value = row.get(fk_col)
+        if fk_value is None or (isinstance(fk_value, str) and fk_value.strip() == ""):
+            if cfg["schema"].get(fk_col, {}).get("required"):
+                report.add_failure(
+                    sheet,
+                    row_idx,
+                    [f"{fk_col}: required parent reference missing"],
+                    worksheet,
+                )
+                parent_missing = True
+                break
+            continue
+        if not _parent_exists(writer, parent_sheet, fk_value, report.created_ids):
+            report.add_skip(
+                sheet,
+                row_idx,
+                f"{fk_col}={fk_value!r} does not exist in "
+                f"{parent_sheet} ({SHEETS[parent_sheet]['collection']})",
+                worksheet,
+            )
+            parent_missing = True
+            break
+    if parent_missing:
+        return
+
+    _normalize_criteria_fields(cleaned)
+
+    id_bson = cfg["schema"][cfg["id_field"]]["bson"]
+    if cfg["id_field"] in ("criteria", "criteria_id") and (
+        id_bson not in cleaned or cleaned[id_bson] is None
+    ):
+        report.add_skip(
+            sheet,
+            row_idx,
+            f"{cfg['id_field']}: no criteria id in Excel — document not written",
+            worksheet,
+        )
+        return
+
+    try:
+        id_value = cleaned[id_bson]
+    except KeyError:
+        report.add_failure(
+            sheet,
+            row_idx,
+            [f"{cfg['id_field']}: missing id after validation"],
+            worksheet,
+        )
+        return
+
+    if _should_skip_duplicate_pk(sheet, id_value, report.created_ids):
+        report.add_skip(
+            sheet,
+            row_idx,
+            f"{cfg['id_field']}={id_value!r} already persisted earlier in this workbook",
+            worksheet,
+        )
+        return
+
+    try:
+        writer.upsert(cfg["collection"], id_bson, cleaned)
+        report.add_success(sheet, id_value)
+    except Exception as exc:  # noqa: BLE001
+        report.add_failure(sheet, row_idx, [f"db_write_error: {exc}"], worksheet)
+
+
 def ingest(
-    parsed_workbook: Dict[str, List[Dict[str, Any]]],
+    parsed_workbook: Union[Dict[str, List[Dict[str, Any]]], List[Dict[str, List[Dict[str, Any]]]]],
     writer: MongoWriter,
 ) -> Dict[str, Any]:
+    """
+    Ingest synthesized records.
+
+    Accepts either:
+      - a list of per-worksheet bundles (preferred; preserves tab order), or
+      - one merged dict (legacy; processes sheets globally by type).
+    """
     report = IngestReport()
 
-    for sheet in _sheets_in_order():
-        rows = parsed_workbook.get(sheet, [])
-        cfg = SHEETS[sheet]
-        if not rows:
-            continue
-
-        for idx, row in enumerate(rows, start=2):  # excel row 1 = header
-            fill_missing_required(row, cfg["schema"])
-            cleaned, errors = validate_row(row, cfg["schema"])
-            if errors:
-                report.add_failure(sheet, idx, [str(e) for e in errors])
-                continue
-
-            # Merge nested / extra BSON fields produced by synthesizer
-            # (addresses[], merchant_tables[], ie_* maps, etc.).
-            for k, v in row.items():
-                if k in cfg["schema"] or v is None:
+    if isinstance(parsed_workbook, list):
+        for tab_records in parsed_workbook:
+            for sheet in _sheets_in_order():
+                rows = tab_records.get(sheet, [])
+                if not rows:
                     continue
-                if k.startswith("_"):
-                    cleaned[k.lstrip("_")] = v
-                else:
-                    cleaned[k] = v
-
-            # Parent FK checks
-            parent_missing = False
-            for fk_col, parent_sheet in cfg["parents"].items():
-                fk_value = row.get(fk_col)
-                if fk_value is None or (isinstance(fk_value, str) and fk_value.strip() == ""):
-                    if cfg["schema"].get(fk_col, {}).get("required"):
-                        report.add_failure(
-                            sheet, idx, [f"{fk_col}: required parent reference missing"]
-                        )
-                        parent_missing = True
-                        break
-                    continue
-                if not _parent_exists(writer, parent_sheet, fk_value, report.created_ids):
-                    report.add_skip(
-                        sheet,
-                        idx,
-                        f"{fk_col}={fk_value!r} does not exist in "
-                        f"{parent_sheet} ({SHEETS[parent_sheet]['collection']})",
-                    )
-                    parent_missing = True
-                    break
-            if parent_missing:
+                for idx, row in enumerate(rows, start=2):
+                    _process_row(sheet, row, idx, writer, report)
+    else:
+        for sheet in _sheets_in_order():
+            rows = parsed_workbook.get(sheet, [])
+            if not rows:
                 continue
-
-            _normalize_criteria_fields(cleaned)
-
-            id_bson = cfg["schema"][cfg["id_field"]]["bson"]
-            if cfg["id_field"] in ("criteria", "criteria_id") and (
-                id_bson not in cleaned or cleaned[id_bson] is None
-            ):
-                report.add_skip(
-                    sheet,
-                    idx,
-                    f"{cfg['id_field']}: no criteria id in Excel — document not written",
-                )
-                continue
-
-            try:
-                id_value = cleaned[id_bson]
-                writer.upsert(cfg["collection"], id_bson, cleaned)
-                report.add_success(sheet, id_value)
-            except Exception as exc:  # noqa: BLE001
-                report.add_failure(sheet, idx, [f"db_write_error: {exc}"])
+            for idx, row in enumerate(rows, start=2):
+                _process_row(sheet, row, idx, writer, report)
 
     return report.to_dict()

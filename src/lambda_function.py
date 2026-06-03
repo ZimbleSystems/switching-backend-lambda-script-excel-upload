@@ -71,8 +71,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # no
                     (b["pages"].get("store") or {}).get("store_id"),
                 )
                 worksheets_meta.append({"name": b["worksheet"], "pages": pages})
-            records = synthesize([b["pages"] for b in bundles])
-            file_report = ingest(records, writer)
+            worksheets = [b["worksheet"] for b in bundles]
+            tab_records = synthesize(
+                [b["pages"] for b in bundles],
+                worksheets=worksheets,
+                per_tab=True,
+            )
+            file_report = ingest(tab_records, writer)
             file_report["worksheets"] = worksheets_meta
             file_report["source"] = f"s3://{bucket}/{key}"
             overall["files"].append(file_report)

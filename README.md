@@ -13,10 +13,19 @@ AWS Lambda (**Python 3.11**) that ingests vertical onboarding Excel workbooks in
 7. **Report** → CloudWatch + optional S3 (`REPORT_BUCKET`)
 
 ```
-S3 (.xlsx) → parse_workbook (each Excel tab) → synthesize (merge all tabs) → ingest → report
+S3 (.xlsx) → parse_workbook (each Excel tab) → synthesize (per tab) → ingest (bundle order) → report
 ```
 
 Empty tabs (no Merchant/Store rows) are skipped. The ingest report includes `worksheets`: tab name + which logical pages were found per tab.
+
+### Multi-tab workbooks (shared masters)
+
+Each Excel tab is ingested in order. **Duplicate primary keys** across tabs are skipped individually (not the whole tab): e.g. merchant `01`, merchant criteria `100`, instrument criteria `300` are written once; later tabs only add new entities (typically **stores**).
+
+- **Chain** `0` and template `chain_id_link` text are treated as “no chain” (no `chain` / chain demographic rows).
+- **Merchant demographic** rows are created only when Excel supplies `merchant_demographics_id` or the Merchant page has real address/contact data.
+- **Store demographics** are written per tab when each tab has its own id (e.g. `DS_101`, `DS_104`).
+- Skips appear in `summary.<sheet>.skipped` and `errors[]` with optional `worksheet` (tab name).
 
 ## Mongo collections (`MONGO_DATABASE`, default `merchant`)
 
@@ -31,7 +40,7 @@ Empty tabs (no Merchant/Store rows) are skipped. The ingest report includes `wor
 | store               | `store_auth`           |
 
 
-Ingest order: parents (`demographic`, criteria, connector, chain) → `connector_table` → `merchant` → `store`.
+Ingest order per tab: `demographic` → criteria → `chain` (if real id) → `merchant` → `store`.
 
 ## Repository contents (production)
 

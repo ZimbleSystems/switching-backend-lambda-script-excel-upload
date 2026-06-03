@@ -1,7 +1,7 @@
 """Convert per-page parsed dicts into orchestrator-ready records (entity-shaped)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from nested_builders import (
     block_flag_to_bool,
@@ -87,6 +87,15 @@ def _s(v: Any) -> Any:
     return str(v).strip()
 
 
+def _is_real_table_id(v: Any) -> bool:
+    if _is_blank(v):
+        return False
+    if _is_placeholder_text(v):
+        return False
+    lower = str(v).strip().lower()
+    return "to be provided" not in lower and "when applicable" not in lower
+
+
 def _first_table_fk(page: Dict[str, Any]) -> tuple:
     for type_, key in (
         ("IVA", "iva_table_id"),
@@ -95,7 +104,7 @@ def _first_table_fk(page: Dict[str, Any]) -> tuple:
         ("CONNECTOR", "connector_table_id"),
     ):
         v = page.get(key)
-        if not _is_blank(v):
+        if _is_real_table_id(v):
             return type_, str(v)
     return None, None
 
@@ -108,6 +117,66 @@ def _ensure_demographic_id(page: Dict[str, Any], key: str, prefix: str) -> str:
 
 def _page_has_entity(page: Dict[str, Any], anchor_key: str) -> bool:
     return not _is_blank(page.get(anchor_key))
+
+
+_INVALID_CHAIN_IDS = frozenset({"0", "00", ""})
+
+
+def _is_placeholder_text(v: Any) -> bool:
+    if _is_blank(v):
+        return True
+    text = str(v).strip().upper()
+    if text in ("NA", "N/A", "NONE", "-"):
+        return True
+    lower = str(v).strip().lower()
+    return lower.startswith("the chain id") or "to be linked" in lower
+
+
+def _is_real_chain_id(v: Any) -> bool:
+    if _is_blank(v):
+        return False
+    chain_id = str(v).strip()
+    return chain_id not in _INVALID_CHAIN_IDS
+
+
+def _effective_chain_link(page: Dict[str, Any]) -> str | None:
+    """Return a real chain id from chain_id_link, or None for template / sentinel values."""
+    link = page.get("chain_id_link")
+    if _is_placeholder_text(link):
+        return None
+    if _is_real_chain_id(link):
+        return _str_or_none(link)
+    return None
+
+
+def _should_synthesize_chain(chain_pg: Dict[str, Any]) -> bool:
+    return _is_real_chain_id(chain_pg.get("chain_id"))
+
+
+def _should_synthesize_merchant_demographic(merchant_pg: Dict[str, Any]) -> bool:
+    """Merchant demographic row only when Excel id is set or merchant page has address/contact."""
+    if not _is_blank(merchant_pg.get("merchant_demographics_id")):
+        return True
+    if not _is_blank(merchant_pg.get("address_line1")):
+        return True
+    if not _is_blank(merchant_pg.get("city")):
+        return True
+    if not _is_blank(merchant_pg.get("phone_number")):
+        return True
+    if not _is_blank(merchant_pg.get("email")):
+        return True
+    return False
+
+
+def _stamp_bundle_metadata(
+    records: Dict[str, List[Dict[str, Any]]],
+    worksheet: Optional[str],
+) -> None:
+    if not worksheet:
+        return
+    for rows in records.values():
+        for row in rows:
+            row["_source_worksheet"] = worksheet
 
 
 def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_type: str) -> Dict[str, Any]:
@@ -167,15 +236,28 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
 
     merchant_id_for_tab: str | None = None
 
-    if _page_has_entity(merchant_pg, "merchant_id"):
+    merchant_id_val = _str_or_none(merchant_pg.get("merchant_id")) if _page_has_entity(
+        merchant_pg, "merchant_id"
+    ) else None
+
+    if _page_has_entity(merchant_pg, "merchant_id") and _should_synthesize_merchant_demographic(
+        merchant_pg
+    ):
         mid = _ensure_demographic_id(merchant_pg, "merchant_demographics_id", "dm")
-        out["demographic"].append(_build_demographic(merchant_pg, mid, "M"))
+        demo = _build_demographic(merchant_pg, mid, "M")
+        if merchant_id_val:
+            demo["_linked_merchant_id"] = merchant_id_val
+        out["demographic"].append(demo)
     if _page_has_entity(store_pg, "store_id"):
         sid = _ensure_demographic_id(store_pg, "store_demographics_id", "ds")
         out["demographic"].append(_build_demographic(store_pg, sid, "S"))
-    if _page_has_entity(chain_pg, "chain_id"):
-        cid = _ensure_demographic_id(chain_pg, "chain_demographics_id", "dc")
-        out["demographic"].append(_build_demographic(chain_pg, cid, "C"))
+    if _should_synthesize_chain(chain_pg):
+        demo_id = chain_pg.get("chain_demographics_id")
+        if not _is_placeholder_text(demo_id):
+            cid = _ensure_demographic_id(chain_pg, "chain_demographics_id", "dc")
+            demo = _build_demographic(chain_pg, cid, "C")
+            demo["_linked_chain_id"] = _str_or_none(chain_pg.get("chain_id"))
+            out["demographic"].append(demo)
 
     if merchant_crit_id is not None:
         description = mcrit_pg.get("criteria_description")
@@ -206,20 +288,23 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         fill_missing_required(base, SHEETS["instrument_criteria"]["schema"])
         out["instrument_criteria"].append(base)
 
-    if _page_has_entity(chain_pg, "chain_id"):
+    if _should_synthesize_chain(chain_pg):
         if _is_blank(chain_pg.get("chain_id")):
             chain_pg["chain_id"] = auto_id("ch")
         if _is_blank(chain_pg.get("chain_name")):
             chain_pg["chain_name"] = "AUTO_CHAIN"
         if _is_blank(chain_pg.get("chain_governing_state")):
             chain_pg["chain_governing_state"] = "NA"
+        chain_demo_id = chain_pg.get("chain_demographics_id")
         rec = transform_all({
             "chain_id": _str_or_none(chain_pg.get("chain_id")),
             "chain_org": org_default,
             "chain_name": chain_pg.get("chain_name"),
             "chain_status": chain_pg.get("chain_status") or "A",
             "chain_governing_state": chain_pg.get("chain_governing_state"),
-            "chain_demographics_id": _str_or_none(chain_pg.get("chain_demographics_id")),
+            "chain_demographics_id": (
+                None if _is_placeholder_text(chain_demo_id) else _str_or_none(chain_demo_id)
+            ),
         })
         fill_missing_required(rec, SHEETS["chain"]["schema"])
         out["chain"].append(rec)
@@ -232,19 +317,24 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         if _is_blank(merchant_pg.get("merchant_governing_state")):
             merchant_pg["merchant_governing_state"] = "NA"
         ttype, tid = _first_table_fk(merchant_pg)
-        chain_id = merchant_pg.get("chain_id_link")
+        chain_id = _effective_chain_link(merchant_pg)
+        merchant_demo_id = _str_or_none(merchant_pg.get("merchant_demographics_id"))
         rec = transform_all({
             "merchant_id": _str_or_none(merchant_pg.get("merchant_id")),
             "merchant_org": merchant_pg.get("merchant_org"),
             "merchant_name": merchant_pg.get("merchant_name"),
             "merchant_status": merchant_pg.get("merchant_status"),
             "merchant_governing_state": merchant_pg.get("merchant_governing_state"),
-            "merchant_demographics_id": _str_or_none(merchant_pg.get("merchant_demographics_id")),
-            "merchant_chain_id": _str_or_none(chain_id),
+            "merchant_demographics_id": merchant_demo_id,
+            "merchant_chain_id": chain_id,
             "merchant_table_type": ttype,
             "merchant_table_id": tid,
             "time_zone": _s(merchant_pg.get("merchant_time_zone")),
         })
+        if not _should_synthesize_merchant_demographic(merchant_pg):
+            rec["_no_merchant_demographic"] = True
+            if _is_blank(rec.get("merchant_demographics_id")):
+                rec["merchant_demographics_id"] = auto_id("dm")
         tables = build_merchant_tables(merchant_pg)
         if tables:
             rec["merchant_tables"] = tables
@@ -274,7 +364,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         else:
             store_pg["store_merchant_id"] = _str_or_none(store_pg.get("store_merchant_id"))
         ttype, tid = _first_table_fk(store_pg)
-        chain_id = store_pg.get("chain_id_link")
+        chain_id = _effective_chain_link(store_pg)
         rec = transform_all({
             "store_id": _str_or_none(store_pg.get("store_id")),
             "store_org": org_default,
@@ -283,7 +373,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             "store_governing_state": store_pg.get("store_governing_state"),
             "store_merchant_id": _str_or_none(store_pg.get("store_merchant_id")),
             "store_demographics_id": _str_or_none(store_pg.get("store_demographics_id")),
-            "store_chain_id": _str_or_none(chain_id),
+            "store_chain_id": chain_id,
             "store_table_type": ttype,
             "store_table_id": tid,
         })
@@ -313,20 +403,35 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
 
 def synthesize(
     parsed_workbooks: Union[Dict[str, Dict[str, Any]], List[Dict[str, Dict[str, Any]]]],
-) -> Dict[str, List[Dict[str, Any]]]:
+    *,
+    worksheets: Optional[List[str]] = None,
+    per_tab: bool = False,
+) -> Union[Dict[str, List[Dict[str, Any]]], List[Dict[str, List[Dict[str, Any]]]]]:
     """
     Build orchestrator-ready records from one or more parsed worksheet bundles.
 
     Each worksheet tab is processed independently (its own merchant/store/chain set).
+
+    When per_tab=True, returns a list of per-worksheet record dicts (for bundle-order ingest).
+    Otherwise returns one merged dict (legacy).
     """
     if isinstance(parsed_workbooks, dict):
         pages_list = [parsed_workbooks]
     else:
         pages_list = parsed_workbooks
 
-    merged = _empty_output()
-    for pages in pages_list:
+    tab_outputs: List[Dict[str, List[Dict[str, Any]]]] = []
+    for i, pages in enumerate(pages_list):
         one = _synthesize_one(pages)
+        ws = worksheets[i] if worksheets and i < len(worksheets) else None
+        _stamp_bundle_metadata(one, ws)
+        tab_outputs.append(one)
+
+    if per_tab:
+        return tab_outputs
+
+    merged = _empty_output()
+    for one in tab_outputs:
         for sheet, rows in one.items():
             merged[sheet].extend(rows)
     return merged
