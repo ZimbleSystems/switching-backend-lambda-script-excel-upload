@@ -17,7 +17,7 @@ from .nested_builders import (
     build_store_chain_list,
     build_store_tables,
 )
-from defaults import auto_criteria_id, auto_id, coerce_int, fill_missing_required
+from defaults import auto_id, coerce_int, fill_missing_required
 from schemas import SHEETS
 from transformers import transform_all
 
@@ -32,13 +32,52 @@ def _str_or_none(v: Any) -> Any:
     return str(v).strip() if not isinstance(v, (int, float, bool)) else v
 
 
-def _criteria_id(*candidates: Any) -> int:
-    """Resolve criteria id from Excel values; must be int in Mongo (Java Integer)."""
+def _optional_criteria_id(*candidates: Any) -> int | None:
+    """Return int criteria id from Excel, or None if not provided."""
     for value in candidates:
         parsed = coerce_int(value)
         if parsed is not None:
             return parsed
-    return auto_criteria_id()
+    return None
+
+
+def _resolve_merchant_criteria_id(
+    merchant_pg: Dict[str, Any],
+    store_pg: Dict[str, Any],
+    mcrit_pg: Dict[str, Any],
+) -> int | None:
+    """One optional merchant criteria id per tab (shared by merchant + store)."""
+    return _optional_criteria_id(
+        mcrit_pg.get("criteria"),
+        merchant_pg.get("criteria_table_id"),
+        store_pg.get("merchant_criteria_table_id"),
+    )
+
+
+def _sync_merchant_criteria_refs(
+    merchant_crit_id: int,
+    merchant_pg: Dict[str, Any],
+    store_pg: Dict[str, Any],
+    mcrit_pg: Dict[str, Any],
+) -> None:
+    mcrit_pg["criteria"] = merchant_crit_id
+    merchant_pg["criteria_table_id"] = merchant_crit_id
+    store_pg["merchant_criteria_table_id"] = merchant_crit_id
+
+
+def _apply_optional_criteria_fks(
+    rec: Dict[str, Any],
+    *,
+    merchant_crit_id: int | None,
+    instrument_crit_id: int | None,
+) -> None:
+    """Only set criteria FK fields when Excel supplied a numeric id."""
+    rec.pop("criteria", None)
+    rec.pop("instrument_criteria", None)
+    if merchant_crit_id is not None:
+        rec["criteria"] = merchant_crit_id
+    if instrument_crit_id is not None:
+        rec["instrument_criteria"] = instrument_crit_id
 
 
 def _s(v: Any) -> Any:
@@ -116,8 +155,14 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         merchant_pg["merchant_org"] = 6032
     org_default = merchant_pg.get("merchant_org", 6032)
     chain_status = transform_all({"chain_status": chain_pg.get("chain_status")}).get("chain_status", "A")
-    merchant_crit_id: int | None = None
-    instrument_crit_id: int | None = None
+    merchant_crit_id = _resolve_merchant_criteria_id(merchant_pg, store_pg, mcrit_pg)
+    instrument_crit_id = _optional_criteria_id(
+        icrit_pg.get("criteria"),
+        merchant_pg.get("instrument_criteria_table_id"),
+        store_pg.get("instrument_criteria_table_id"),
+    )
+    if merchant_crit_id is not None:
+        _sync_merchant_criteria_refs(merchant_crit_id, merchant_pg, store_pg, mcrit_pg)
 
     if _page_has_entity(merchant_pg, "merchant_id"):
         mid = _ensure_demographic_id(merchant_pg, "merchant_demographics_id", "dm")
@@ -129,12 +174,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         cid = _ensure_demographic_id(chain_pg, "chain_demographics_id", "dc")
         out["demographic"].append(_build_demographic(chain_pg, cid, "C"))
 
-    if _page_has_entity(merchant_pg, "merchant_id") or not _is_blank(mcrit_pg.get("criteria")):
-        merchant_crit_id = _criteria_id(
-            mcrit_pg.get("criteria"),
-            merchant_pg.get("criteria_table_id"),
-        )
-        mcrit_pg["criteria"] = merchant_crit_id
+    if merchant_crit_id is not None:
         description = mcrit_pg.get("criteria_description")
         if _is_blank(description):
             description = "AUTO_CRITERIA"
@@ -151,13 +191,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         fill_missing_required(base, SHEETS["merchant_criteria"]["schema"])
         out["merchant_criteria"].append(base)
 
-    if _page_has_entity(merchant_pg, "merchant_id") or not _is_blank(icrit_pg.get("criteria")):
-        instrument_crit_id = _criteria_id(
-            icrit_pg.get("criteria"),
-            store_pg.get("instrument_criteria_table_id"),
-            merchant_pg.get("instrument_criteria_table_id"),
-        )
-        icrit_pg["criteria"] = instrument_crit_id
+    if instrument_crit_id is not None:
         description = icrit_pg.get("description")
         if _is_blank(description):
             description = "AUTO_INSTRUMENT_CRITERIA"
@@ -203,10 +237,6 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             "merchant_status": merchant_pg.get("merchant_status"),
             "merchant_governing_state": merchant_pg.get("merchant_governing_state"),
             "merchant_demographics_id": _str_or_none(merchant_pg.get("merchant_demographics_id")),
-            "criteria": merchant_crit_id or coerce_int(merchant_pg.get("criteria_table_id")),
-            "instrument_criteria": instrument_crit_id or coerce_int(
-                merchant_pg.get("instrument_criteria_table_id"),
-            ),
             "merchant_chain_id": _str_or_none(chain_id),
             "merchant_table_type": ttype,
             "merchant_table_id": tid,
@@ -243,10 +273,6 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             "store_governing_state": store_pg.get("store_governing_state"),
             "store_merchant_id": _str_or_none(store_pg.get("store_merchant_id")),
             "store_demographics_id": _str_or_none(store_pg.get("store_demographics_id")),
-            "criteria": merchant_crit_id or coerce_int(store_pg.get("merchant_criteria_table_id")),
-            "instrument_criteria": instrument_crit_id or coerce_int(
-                store_pg.get("instrument_criteria_table_id"),
-            ),
             "store_chain_id": _str_or_none(chain_id),
             "store_table_type": ttype,
             "store_table_id": tid,
@@ -264,6 +290,11 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             rec["store_printer_terminals"] = _str_or_none(store_pg.get("printer"))
         if not _is_blank(store_pg.get("terminal_information")):
             rec["store_pos_terminals"] = [{"terminal_id": _str_or_none(store_pg.get("terminal_information"))}]
+        _apply_optional_criteria_fks(
+            rec,
+            merchant_crit_id=merchant_crit_id,
+            instrument_crit_id=instrument_crit_id,
+        )
         fill_missing_required(rec, SHEETS["store"]["schema"])
         out["store"].append(rec)
 
@@ -277,6 +308,19 @@ def synthesize(
     Build orchestrator-ready records from one or more parsed worksheet bundles.
 
     Each worksheet tab is processed independently (its own merchant/store/chain set).
+    """
+    if isinstance(parsed_workbooks, dict):
+        pages_list = [parsed_workbooks]
+    else:
+        pages_list = parsed_workbooks
+
+    merged = _empty_output()
+    for pages in pages_list:
+        one = _synthesize_one(pages)
+        for sheet, rows in one.items():
+            merged[sheet].extend(rows)
+    return merged
+et tab is processed independently (its own merchant/store/chain set).
     """
     if isinstance(parsed_workbooks, dict):
         pages_list = [parsed_workbooks]

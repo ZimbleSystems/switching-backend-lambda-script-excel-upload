@@ -46,8 +46,6 @@ def default_for_required(col: str, rule: Dict[str, Any]) -> Any:
 
     field_type = rule.get("type", "str")
     if field_type == "int":
-        if col in ("criteria", "criteria_id"):
-            return auto_criteria_id()
         if col.endswith("_org"):
             return 6032
         return 0

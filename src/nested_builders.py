@@ -16,6 +16,22 @@ def _s(v: Any) -> Optional[str]:
     return str(v).strip()
 
 
+def _address_lines(raw: Any) -> List[str]:
+    """address_line in Mongo is List<String> (AddressBlock.addressLineList)."""
+    if _blank(raw):
+        return []
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if not _blank(x)]
+    text = str(raw).strip()
+    lines: List[str] = []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        for part in line.split(";"):
+            part = part.strip()
+            if part:
+                lines.append(part)
+    return lines
+
+
 def _ie_and_list(raw: Any) -> Tuple[str, List[str]]:
     """Parse 'Include: US,MX' or plain 'US,MX' -> (I|E|N, [codes])."""
     if _blank(raw):
@@ -56,8 +72,9 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if _blank(page.get("address_line1")) and _blank(page.get("city")):
         return None
     block: Dict[str, Any] = {}
-    if not _blank(page.get("address_line1")):
-        block["address_line"] = _s(page.get("address_line1"))
+    address_lines = _address_lines(page.get("address_line1"))
+    if address_lines:
+        block["address_line"] = address_lines
     if not _blank(page.get("city")):
         block["city"] = _s(page.get("city"))
     if not _blank(page.get("state")):

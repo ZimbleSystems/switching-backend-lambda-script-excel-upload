@@ -18,20 +18,21 @@ from typing import Any, Dict, List, Set
 from errors import ValidationError
 from mongo_writer import MongoWriter
 from schemas import SHEETS
-from defaults import auto_criteria_id, coerce_int, fill_missing_required
+from defaults import coerce_int, fill_missing_required
 from validators import validate_row
 
 
-def _normalize_criteria_fields(cleaned: Dict[str, Any], *, require_criteria: bool = False) -> None:
-    """Mongo / Java expect criteria ids as Integer, never string."""
+def _normalize_criteria_fields(cleaned: Dict[str, Any]) -> None:
+    """Criteria FKs must be Integer in Mongo; drop blank or non-numeric values."""
     for key in ("criteria", "instrument_criteria"):
-        if key not in cleaned or cleaned[key] is None:
+        if key not in cleaned:
+            continue
+        if cleaned[key] is None:
+            del cleaned[key]
             continue
         parsed = coerce_int(cleaned[key])
         if parsed is not None:
             cleaned[key] = parsed
-        elif key == "criteria" and require_criteria:
-            cleaned[key] = auto_criteria_id()
         else:
             del cleaned[key]
 
@@ -138,14 +139,22 @@ def ingest(
             if parent_missing:
                 continue
 
-            _normalize_criteria_fields(
-                cleaned,
-                require_criteria=sheet in ("merchant_criteria", "instrument_criteria"),
-            )
+            _normalize_criteria_fields(cleaned)
+
+            id_bson = cfg["schema"][cfg["id_field"]]["bson"]
+            if cfg["id_field"] in ("criteria", "criteria_id") and (
+                id_bson not in cleaned or cleaned[id_bson] is None
+            ):
+                report.add_skip(
+                    sheet,
+                    idx,
+                    f"{cfg['id_field']}: no criteria id in Excel — document not written",
+                )
+                continue
 
             try:
-                id_value = cleaned[cfg["schema"][cfg["id_field"]]["bson"]]
-                writer.upsert(cfg["collection"], cfg["schema"][cfg["id_field"]]["bson"], cleaned)
+                id_value = cleaned[id_bson]
+                writer.upsert(cfg["collection"], id_bson, cleaned)
                 report.add_success(sheet, id_value)
             except Exception as exc:  # noqa: BLE001
                 report.add_failure(sheet, idx, [f"db_write_error: {exc}"])

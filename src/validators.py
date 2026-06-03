@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
-from defaults import auto_criteria_id, coerce_int, default_for_required
+from defaults import coerce_int, default_for_required
 from errors import ValidationError
 
 
@@ -12,8 +12,6 @@ def _coerce_int(value: Any, field: str) -> int:
     parsed = coerce_int(value)
     if parsed is not None:
         return parsed
-    if field in ("criteria", "criteria_id"):
-        return auto_criteria_id()
     raise ValidationError(field, f"cannot convert to int: {value!r}")
 
 
@@ -72,10 +70,13 @@ def validate_row(
         try:
             value = _coerce(raw_value, rule["type"], col)
         except ValidationError:
+            if col in ("criteria", "criteria_id"):
+                errors.append(
+                    ValidationError(col, f"must be a numeric criteria id, got {raw_value!r}")
+                )
+                continue
             if rule.get("type") == "bool":
                 value = False
-            elif rule.get("type") == "int" and col in ("criteria", "criteria_id"):
-                value = auto_criteria_id()
             elif "enum" in rule and rule["enum"]:
                 value = rule["enum"][0]
             else:
@@ -85,10 +86,12 @@ def validate_row(
             value = coerce_int(value)
             if value is None:
                 if col in ("criteria", "criteria_id"):
-                    value = auto_criteria_id()
-                else:
-                    value = default_for_required(col, rule)
-            elif col in ("criteria", "criteria_id"):
+                    errors.append(
+                        ValidationError(col, f"must be a numeric criteria id, got {raw_value!r}")
+                    )
+                    continue
+                value = default_for_required(col, rule)
+            else:
                 value = int(value)
 
         if "enum" in rule and value not in rule["enum"]:
