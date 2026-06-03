@@ -20,16 +20,16 @@ Empty tabs (no Merchant/Store rows) are skipped. The ingest report includes `wor
 
 ## Mongo collections (`MONGO_DATABASE`, default `merchant`)
 
-| Sheet | Collection |
-|-------|------------|
-| demographic | `demographic` |
-| merchant_criteria | `criteria` |
-| instrument_criteria | `instrument-criteria` |
-| connector | `connector_properties` |
-| connector_table | `connector_table` |
-| chain | `chain_auth` |
-| merchant | `merchant_auth` |
-| store | `store_auth` |
+
+| Sheet               | Collection             |
+| ------------------- | ---------------------- |
+| demographic         | `demographic`          |
+| merchant_criteria   | `criteria`             |
+| instrument_criteria | `instrument-criteria`  |              |
+| chain               | `chain_auth`           |
+| merchant            | `merchant_auth`        |
+| store               | `store_auth`           |
+
 
 Ingest order: parents (`demographic`, criteria, connector, chain) → `connector_table` → `merchant` → `store`.
 
@@ -64,26 +64,30 @@ docker run --rm \
   '
 ```
 
-Upload **`package.zip`** to Lambda after every change to `src/` or `lambda_function.py`.
+Upload `**package.zip**` to Lambda after every change to `src/` or `lambda_function.py`.
 
 On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local copy of the dev scripts.
 
 ## AWS configuration
 
-| Setting | Value |
-|---------|--------|
-| Runtime | `python3.11` |
+
+| Setting | Value                            |
+| ------- | -------------------------------- |
+| Runtime | `python3.11`                     |
 | Handler | `lambda_function.lambda_handler` |
-| Timeout | 60s+ |
-| Memory | 1024 MB+ |
+| Timeout | 60s+                             |
+| Memory  | 1024 MB+                         |
+
 
 ### Environment variables
 
-| Key | Required | Description |
-|-----|----------|-------------|
-| `MONGO_CONNECTION_STRING` | Yes | Full Mongo URI |
-| `MONGO_DATABASE` | Yes | e.g. `merchant` |
-| `REPORT_BUCKET` | No | S3 bucket for ingest JSON reports |
+
+| Key                       | Required | Description                       |
+| ------------------------- | -------- | --------------------------------- |
+| `MONGO_CONNECTION_STRING` | Yes      | Full Mongo URI                    |
+| `MONGO_DATABASE`          | Yes      | e.g. `merchant`                   |
+| `REPORT_BUCKET`           | No       | S3 bucket for ingest JSON reports |
+
 
 ### S3 trigger
 
