@@ -20,6 +20,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "create_python_layer" {
+  type        = bool
+  description = "Whether this stack should create and attach the packaged Python dependency layer."
+  default     = true
+}
+
 variable "vpc_name" {
   type        = string
   description = "The value of the Name tag assigned to your target VPC network."
