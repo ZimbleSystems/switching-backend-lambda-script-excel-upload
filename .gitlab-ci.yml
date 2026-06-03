@@ -9,50 +9,123 @@ default:
     - export AWS_ACCESS_KEY_ID=$AWS_DEV_ACCESS_KEY_ID
     - export AWS_SECRET_ACCESS_KEY=$AWS_DEV_SECRET_ACCESS_KEY
     - export AWS_DEFAULT_REGION=$AWS_DEV_DEFAULT_REGION
+
+variables:
+  REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic"
+
 stages:
   - s3
   - lambda
+  - package
+  - deploy
   - destroy_lambda
   - destroy_s3
 
 provision_s3:
   stage: s3
+  needs: []
   script:
     - echo "Provisioning S3 bucket for Excel uploads..."
     - cd s3_creation
-    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="encrypt=true"
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
     - terraform plan 
     - terraform apply -auto-approve
   rules:   
    - if: '$CI_COMMIT_BRANCH == "main"'
      changes:
        - s3_creation/**/*
+       - .gitlab-ci.yml
 
 provision_lambda:
   stage: lambda
+  needs: []
   script:
     - echo "Provisioning Lambda function for Excel uploads..."
     - cd Lambda-def
-    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
     - terraform plan
     - terraform apply -auto-approve
   rules:
    - if: '$CI_COMMIT_BRANCH == "main"'
      changes:
        - Lambda-def/**/*
-       - src/**/*
+       - .gitlab-ci.yml
+
+lambda-package-template:
+  stage: package
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl zip unzip
+  variables:
+    DIR: "src"
+    NAME: "excel-ingest-lambda"
+    DOTENV: "package_info.env"
+  script:
+    - export PACKAGE_DATE="$(date +%Y%m%d)"
+    - export PACKAGE_COMMIT="${CI_COMMIT_SHORT_SHA}"
+    - export PACKAGE_VERSION="${PACKAGE_DATE}-${PACKAGE_COMMIT}"
+    - export PACKAGE_BRANCH="${CI_COMMIT_BRANCH}"
+    - cd ${DIR} && zip -r "../${NAME}-${PACKAGE_VERSION}.zip" . && cd ..
+    - unzip -t "${NAME}-${PACKAGE_VERSION}.zip"
+    - curl -v --header "JOB-TOKEN:${CI_JOB_TOKEN}" --upload-file "${NAME}-${PACKAGE_VERSION}.zip" "${REGISTRY_URL}/${PACKAGE_BRANCH}/${NAME}/${PACKAGE_DATE}/${NAME}-${PACKAGE_VERSION}.zip"
+    - echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> ${DOTENV}
+    - echo "PACKAGE_DATE=${PACKAGE_DATE}" >> ${DOTENV}
+    - echo "PACKAGE_BRANCH=${PACKAGE_BRANCH}" >> ${DOTENV}
+  artifacts:
+    reports:
+      dotenv: $DOTENV
+  rules:  
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - src/**/*
+        - .gitlab-ci.yml
+
+
+lambda-deploy-with-acl-template:
+  stage: deploy
+  image: python:3.12-alpine
+  before_script:
+    - apk add --no-cache curl aws-cli
+    - pip install --no-cache-dir boto3
+    - export AWS_ACCESS_KEY_ID=$AWS_DEV_ACCESS_KEY_ID
+    - export AWS_SECRET_ACCESS_KEY=$AWS_DEV_SECRET_ACCESS_KEY
+    - export AWS_DEFAULT_REGION=$AWS_DEV_DEFAULT_REGION
+  variables:
+    FUNC: "switching-dev-excel-ingest-lambda"
+    NAME: "excel-ingest-lambda"
+  script:
+    - export PACKAGE_DATE="$(date +%Y%m%d)"
+    - export PACKAGE_COMMIT="${CI_COMMIT_SHORT_SHA}"
+    - export PACKAGE_VERSION="${PACKAGE_DATE}-${PACKAGE_COMMIT}"
+    - export PACKAGE_BRANCH="${CI_COMMIT_BRANCH}"
+    - curl -v --header "JOB-TOKEN:${CI_JOB_TOKEN}" -o deployment.zip "${REGISTRY_URL}/${PACKAGE_BRANCH}/${NAME}/${PACKAGE_DATE}/${NAME}-${PACKAGE_VERSION}.zip"
+    - aws sts get-caller-identity
+    - |
+      python3 -c "
+      import boto3;
+      with open('deployment.zip', 'rb') as f: z = f.read();
+      r = boto3.client('lambda').update_function_code(FunctionName='${FUNC}', ZipFile=z);
+      print('Lambda updated: ' + r['FunctionArn'])"
+  needs:
+    - lambda-package-template
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - src/**/*
+        - .gitlab-ci.yml
 
 destroy_lambda:
   stage: destroy_lambda
   script:
     - echo "Destroying Lambda function for Excel uploads..."
     - cd Lambda-def
-    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
     - terraform destroy -auto-approve
   rules: 
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
         - Lambda-def/**/*
+        - .gitlab-ci.yml
       when: manual
 
 destroy_s3:
@@ -60,10 +133,11 @@ destroy_s3:
   script:
     - echo "Destroying S3 bucket for Excel uploads..."
     - cd s3_creation
-    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
     - terraform destroy -auto-approve
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"' 
       changes:
         - s3_creation/**/*
+        - .gitlab-ci.yml
       when: manual
