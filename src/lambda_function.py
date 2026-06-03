@@ -20,10 +20,10 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-from src.excel_parser import parse_workbook
-from src.mongo_writer import MongoWriter
-from src.orchestrator import ingest
-from src.synthesizer import synthesize
+from excel_parser import parse_workbook
+from mongo_writer import MongoWriter
+from orchestrator import ingest
+from synthesizer import synthesize
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

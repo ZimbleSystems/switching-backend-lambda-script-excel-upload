@@ -15,11 +15,25 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set
 
-from .errors import ValidationError
-from .mongo_writer import MongoWriter
-from .schemas import SHEETS
-from .defaults import fill_missing_required
-from .validators import validate_row
+from errors import ValidationError
+from mongo_writer import MongoWriter
+from schemas import SHEETS
+from defaults import auto_criteria_id, coerce_int, fill_missing_required
+from validators import validate_row
+
+
+def _normalize_criteria_fields(cleaned: Dict[str, Any], *, require_criteria: bool = False) -> None:
+    """Mongo / Java expect criteria ids as Integer, never string."""
+    for key in ("criteria", "instrument_criteria"):
+        if key not in cleaned or cleaned[key] is None:
+            continue
+        parsed = coerce_int(cleaned[key])
+        if parsed is not None:
+            cleaned[key] = parsed
+        elif key == "criteria" and require_criteria:
+            cleaned[key] = auto_criteria_id()
+        else:
+            del cleaned[key]
 
 
 def _sheets_in_order() -> List[str]:
@@ -123,6 +137,11 @@ def ingest(
                     break
             if parent_missing:
                 continue
+
+            _normalize_criteria_fields(
+                cleaned,
+                require_criteria=sheet in ("merchant_criteria", "instrument_criteria"),
+            )
 
             try:
                 id_value = cleaned[cfg["schema"][cfg["id_field"]]["bson"]]

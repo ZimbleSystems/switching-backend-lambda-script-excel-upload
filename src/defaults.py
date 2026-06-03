@@ -10,6 +10,32 @@ def auto_id(prefix: str = "auto") -> str:
     return f"{prefix}{uuid.uuid4().hex[:12]}".lower()
 
 
+def auto_criteria_id() -> int:
+    """Numeric criteria id (MerchantCriteria / InstrumentCriteria use Integer)."""
+    return (uuid.uuid4().int % 899_999) + 100_001
+
+
+def coerce_int(value: Any) -> int | None:
+    """Parse Excel / string values into int for Mongo Integer fields."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
 def default_for_required(col: str, rule: Dict[str, Any]) -> Any:
     """Pick a valid dummy value for a required schema field that was left blank."""
     if "default" in rule:
@@ -20,7 +46,9 @@ def default_for_required(col: str, rule: Dict[str, Any]) -> Any:
 
     field_type = rule.get("type", "str")
     if field_type == "int":
-        if col.endswith("_org") or col == "criteria_org":
+        if col in ("criteria", "criteria_id"):
+            return auto_criteria_id()
+        if col.endswith("_org"):
             return 6032
         return 0
     if field_type == "bool":
@@ -39,7 +67,7 @@ def default_for_required(col: str, rule: Dict[str, Any]) -> Any:
         return "AUTO_DESCRIPTION"
     if col == "demographic_type":
         return "M"
-    if col.endswith("_id") or col in ("criteria", "merchant_id", "store_id", "chain_id"):
+    if col.endswith("_id") or col in ("merchant_id", "store_id", "chain_id"):
         prefix = col.replace("_id", "").replace("_", "")[:4] or "id"
         return auto_id(prefix)
 

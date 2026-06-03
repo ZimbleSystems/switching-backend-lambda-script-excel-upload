@@ -17,9 +17,9 @@ from .nested_builders import (
     build_store_chain_list,
     build_store_tables,
 )
-from .defaults import auto_id, fill_missing_required
-from .schemas import SHEETS
-from .transformers import transform_all
+from defaults import auto_criteria_id, auto_id, coerce_int, fill_missing_required
+from schemas import SHEETS
+from transformers import transform_all
 
 
 def _is_blank(v: Any) -> bool:
@@ -30,6 +30,15 @@ def _str_or_none(v: Any) -> Any:
     if _is_blank(v):
         return None
     return str(v).strip() if not isinstance(v, (int, float, bool)) else v
+
+
+def _criteria_id(*candidates: Any) -> int:
+    """Resolve criteria id from Excel values; must be int in Mongo (Java Integer)."""
+    for value in candidates:
+        parsed = coerce_int(value)
+        if parsed is not None:
+            return parsed
+    return auto_criteria_id()
 
 
 def _s(v: Any) -> Any:
@@ -101,8 +110,9 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
 
     if _is_blank(merchant_pg.get("merchant_org")):
         merchant_pg["merchant_org"] = 6032
-    org_default = merchant_pg.get("merchant_org")
     chain_status = transform_all({"chain_status": chain_pg.get("chain_status")}).get("chain_status", "A")
+    merchant_crit_id: int | None = None
+    instrument_crit_id: int | None = None
 
     if _page_has_entity(merchant_pg, "merchant_id"):
         mid = _ensure_demographic_id(merchant_pg, "merchant_demographics_id", "dm")
@@ -115,15 +125,17 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
         out["demographic"].append(_build_demographic(chain_pg, cid, "C"))
 
     if _page_has_entity(merchant_pg, "merchant_id") or not _is_blank(mcrit_pg.get("criteria")):
-        if _is_blank(mcrit_pg.get("criteria")):
-            mcrit_pg["criteria"] = merchant_pg.get("criteria_table_id") or auto_id("mc")
-        if _is_blank(mcrit_pg.get("criteria_description")):
-            mcrit_pg["criteria_description"] = "AUTO_CRITERIA"
+        merchant_crit_id = _criteria_id(
+            mcrit_pg.get("criteria"),
+            merchant_pg.get("criteria_table_id"),
+        )
+        mcrit_pg["criteria"] = merchant_crit_id
+        description = mcrit_pg.get("criteria_description")
+        if _is_blank(description):
+            description = "AUTO_CRITERIA"
         base = transform_all({
-            "criteria": _str_or_none(mcrit_pg.get("criteria")),
-            "criteria_org": org_default,
-            "criteria_description": mcrit_pg.get("criteria_description"),
-            "criteria_status": "A",
+            "criteria": merchant_crit_id,
+            "description": description,
             "block_installments": mcrit_pg.get("block_installments"),
             "block_cashback": mcrit_pg.get("block_cashback"),
             "block_international": mcrit_pg.get("block_international"),
@@ -135,15 +147,18 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
         out["merchant_criteria"].append(base)
 
     if _page_has_entity(merchant_pg, "merchant_id") or not _is_blank(icrit_pg.get("criteria")):
-        if _is_blank(icrit_pg.get("criteria")):
-            icrit_pg["criteria"] = store_pg.get("instrument_criteria_table_id") or auto_id("ic")
-        if _is_blank(icrit_pg.get("description")):
-            icrit_pg["description"] = "AUTO_INSTRUMENT_CRITERIA"
+        instrument_crit_id = _criteria_id(
+            icrit_pg.get("criteria"),
+            store_pg.get("instrument_criteria_table_id"),
+            merchant_pg.get("instrument_criteria_table_id"),
+        )
+        icrit_pg["criteria"] = instrument_crit_id
+        description = icrit_pg.get("description")
+        if _is_blank(description):
+            description = "AUTO_INSTRUMENT_CRITERIA"
         base = transform_all({
-            "criteria_id": _str_or_none(icrit_pg.get("criteria")),
-            "criteria_org": org_default,
-            "description": icrit_pg.get("description"),
-            "criteria_status": "A",
+            "criteria_id": instrument_crit_id,
+            "description": description,
         })
         base.update(build_instrument_criteria_extras(icrit_pg))
         fill_missing_required(base, SHEETS["instrument_criteria"]["schema"])
@@ -183,7 +198,10 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
             "merchant_status": merchant_pg.get("merchant_status"),
             "merchant_governing_state": merchant_pg.get("merchant_governing_state"),
             "merchant_demographics_id": _str_or_none(merchant_pg.get("merchant_demographics_id")),
-            "criteria": _str_or_none(merchant_pg.get("criteria_table_id")),
+            "criteria": merchant_crit_id or coerce_int(merchant_pg.get("criteria_table_id")),
+            "instrument_criteria": instrument_crit_id or coerce_int(
+                merchant_pg.get("instrument_criteria_table_id"),
+            ),
             "merchant_chain_id": _str_or_none(chain_id),
             "merchant_table_type": ttype,
             "merchant_table_id": tid,
@@ -220,8 +238,10 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
             "store_governing_state": store_pg.get("store_governing_state"),
             "store_merchant_id": _str_or_none(store_pg.get("store_merchant_id")),
             "store_demographics_id": _str_or_none(store_pg.get("store_demographics_id")),
-            "criteria": _str_or_none(store_pg.get("merchant_criteria_table_id")),
-            "instrument_criteria": _str_or_none(store_pg.get("instrument_criteria_table_id")),
+            "criteria": merchant_crit_id or coerce_int(store_pg.get("merchant_criteria_table_id")),
+            "instrument_criteria": instrument_crit_id or coerce_int(
+                store_pg.get("instrument_criteria_table_id"),
+            ),
             "store_chain_id": _str_or_none(chain_id),
             "store_table_type": ttype,
             "store_table_id": tid,

@@ -42,12 +42,10 @@ DEMOGRAPHIC_SCHEMA = {
 # merchant-criteria-service -> collection: criteria
 # ---------------------------------------------------------------------------
 MERCHANT_CRITERIA_SCHEMA = {
-    "criteria": {"bson": "criteria", "required": True, "type": "str"},
-    "criteria_org": {"bson": "criteria_org", "required": True, "type": "int"},
-    "criteria_description": {"bson": "criteria_description", "required": True, "type": "str"},
-    "criteria_status": {
-        "bson": "criteria_status", "required": True, "type": "str",
-        "enum": ["A", "I"],
+    "criteria": {"bson": "criteria", "required": True, "type": "int"},
+    "description": {
+        "bson": "description", "required": True, "type": "str",
+        "min": 1, "max": 200,
     },
     "block_installments": {"bson": "block_installments", "required": True, "type": "bool"},
     "block_cashback": {"bson": "block_cashback", "required": True, "type": "bool"},
@@ -59,15 +57,10 @@ MERCHANT_CRITERIA_SCHEMA = {
 # instrument-criteria-service -> collection: instrument-criteria
 # ---------------------------------------------------------------------------
 INSTRUMENT_CRITERIA_SCHEMA = {
-    "criteria_id": {"bson": "criteria", "required": True, "type": "str"},
-    "criteria_org": {"bson": "criteria_org", "required": True, "type": "int"},
+    "criteria_id": {"bson": "criteria", "required": True, "type": "int"},
     "description": {
         "bson": "description", "required": True, "type": "str",
         "min": 1, "max": 200,
-    },
-    "criteria_status": {
-        "bson": "criteria_status", "required": True, "type": "str",
-        "enum": ["A", "I"],
     },
     "no_declines_daily": {
         "bson": "no_declines_daily", "required": False, "type": "int",
@@ -178,8 +171,8 @@ MERCHANT_SCHEMA = {
     "merchant_demographics_id": {
         "bson": "merchant_demographics_id", "required": True, "type": "str",
     },
-    "criteria": {"bson": "criteria", "required": False, "type": "str"},
-    "instrument_criteria": {"bson": "instrument_criteria", "required": False, "type": "str"},
+    "criteria": {"bson": "criteria", "required": False, "type": "int"},
+    "instrument_criteria": {"bson": "instrument_criteria", "required": False, "type": "int"},
     "merchant_chain_id": {"bson": "merchant_chain_id", "required": False, "type": "str"},
     "merchant_table_type": {
         "bson": "merchant_table_type", "required": False, "type": "str",
@@ -203,8 +196,8 @@ STORE_SCHEMA = {
     "store_governing_state": {"bson": "store_governing_state", "required": True, "type": "str"},
     "store_merchant_id": {"bson": "store_merchant_id", "required": True, "type": "str"},
     "store_demographics_id": {"bson": "store_demographics_id", "required": True, "type": "str"},
-    "criteria": {"bson": "criteria", "required": False, "type": "str"},
-    "instrument_criteria": {"bson": "instrument_criteria", "required": False, "type": "str"},
+    "criteria": {"bson": "criteria", "required": False, "type": "int"},
+    "instrument_criteria": {"bson": "instrument_criteria", "required": False, "type": "int"},
     "store_table_type": {
         "bson": "store_table_type", "required": False, "type": "str",
         "enum": ["IVA", "SKU", "COUPON", "CONNECTOR"],

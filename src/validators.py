@@ -4,13 +4,22 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
-from .defaults import default_for_required
-from .errors import ValidationError
+from defaults import auto_criteria_id, coerce_int, default_for_required
+from errors import ValidationError
+
+
+def _coerce_int(value: Any, field: str) -> int:
+    parsed = coerce_int(value)
+    if parsed is not None:
+        return parsed
+    if field in ("criteria", "criteria_id"):
+        return auto_criteria_id()
+    raise ValidationError(field, f"cannot convert to int: {value!r}")
 
 
 _TYPE_COERCERS = {
     "str": lambda v: str(v).strip(),
-    "int": lambda v: int(float(v)) if isinstance(v, str) and v.strip() != "" else int(v),
+    "int": _coerce_int,
     "float": lambda v: float(v),
     "bool": lambda v: str(v).strip().lower() in ("1", "true", "yes", "y", "t"),
     "list": lambda v: v if isinstance(v, list) else [v],
@@ -31,8 +40,10 @@ def _is_blank(value: Any) -> bool:
 
 def _coerce(value: Any, target_type: str, field: str) -> Any:
     try:
+        if target_type == "int":
+            return _coerce_int(value, field)
         return _TYPE_COERCERS[target_type](value)
-    except Exception as exc:
+    except (ValidationError, TypeError, ValueError) as exc:
         raise ValidationError(field, f"cannot convert to {target_type}: {exc}") from exc
 
 
@@ -63,10 +74,22 @@ def validate_row(
         except ValidationError:
             if rule.get("type") == "bool":
                 value = False
+            elif rule.get("type") == "int" and col in ("criteria", "criteria_id"):
+                value = auto_criteria_id()
             elif "enum" in rule and rule["enum"]:
                 value = rule["enum"][0]
             else:
                 value = default_for_required(col, rule)
+
+        if rule["type"] == "int":
+            value = coerce_int(value)
+            if value is None:
+                if col in ("criteria", "criteria_id"):
+                    value = auto_criteria_id()
+                else:
+                    value = default_for_required(col, rule)
+            elif col in ("criteria", "criteria_id"):
+                value = int(value)
 
         if "enum" in rule and value not in rule["enum"]:
             value = rule["enum"][0]
