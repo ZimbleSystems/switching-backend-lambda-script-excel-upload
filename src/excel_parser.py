@@ -14,21 +14,28 @@ first canonical key in `PAGE_SEQUENCES[page]`, the second row the second
 key, and so on. This is robust as long as the user keeps the standard
 template row order.
 
-Output:
-    {
-      "merchant":            {"merchant_org": "6032", "merchant_id": "01", ...},
-      "store":               {...},
-      "chain":               {...},
-      "merchant_criteria":   {...},
-      "instrument_criteria": {...},
-    }
+Output (one entry per Excel worksheet tab):
+    [
+      {
+        "worksheet": "Sheet1",
+        "pages": {
+          "merchant":            {"merchant_org": "6032", "merchant_id": "01", ...},
+          "store":               {...},
+          "chain":               {...},
+          "merchant_criteria":   {...},
+          "instrument_criteria": {...},
+        },
+      },
+      ...
+    ]
 """
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import openpyxl
+from openpyxl.worksheet.worksheet import Worksheet
 
 
 PAGE_NAMES = {
@@ -222,11 +229,8 @@ def _is_blank(v) -> bool:
     return v is None or (isinstance(v, str) and v.strip() == "")
 
 
-def parse_workbook(payload: bytes) -> Dict[str, Dict[str, object]]:
-    """Read the vertical workbook and return one dict per page."""
-    wb = openpyxl.load_workbook(BytesIO(payload), data_only=True)
-    ws = wb.active
-
+def _parse_worksheet(ws: Worksheet) -> Dict[str, Dict[str, object]]:
+    """Parse one worksheet tab into canonical page dicts (Merchant, Store, …)."""
     page_rows: Dict[str, List[Tuple[str, object]]] = {}
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or len(row) < 5:
@@ -248,7 +252,7 @@ def parse_workbook(payload: bytes) -> Dict[str, Dict[str, object]]:
     for page_key, rows in page_rows.items():
         sequence = PAGE_SEQUENCES.get(page_key, [])
         record: Dict[str, object] = {}
-        for idx, (attr, value) in enumerate(rows):
+        for idx, (_attr, value) in enumerate(rows):
             if idx >= len(sequence):
                 break
             canonical = sequence[idx]
@@ -256,3 +260,17 @@ def parse_workbook(payload: bytes) -> Dict[str, Dict[str, object]]:
         out[page_key] = record
 
     return out
+
+
+def parse_workbook(payload: bytes) -> List[Dict[str, Any]]:
+    """Read every worksheet in the workbook; each tab is one onboarding bundle."""
+    wb = openpyxl.load_workbook(BytesIO(payload), data_only=True)
+    bundles: List[Dict[str, Any]] = []
+
+    for ws in wb.worksheets:
+        pages = _parse_worksheet(ws)
+        if not pages:
+            continue
+        bundles.append({"worksheet": ws.title, "pages": pages})
+
+    return bundles

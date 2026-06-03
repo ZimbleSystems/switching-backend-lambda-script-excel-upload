@@ -5,7 +5,7 @@ AWS Lambda (**Python 3.11**) that ingests vertical onboarding Excel workbooks in
 ## What it does
 
 1. **S3** `ObjectCreated` → download `.xlsx`
-2. **Parse** vertical template (pages: Merchant, Store, Chain, Merchant Criteria, Instrument Criteria)
+2. **Parse** vertical template from **every worksheet tab** in the workbook (each tab = one merchant/store bundle; pages: Merchant, Store, Chain, Merchant Criteria, Instrument Criteria)
 3. **Synthesize** implicit records (demographics, table refs, defaults)
 4. **Transform** display text → service codes (`Activo` → `A`, `Nuevo León` → `NLE`, …)
 5. **Validate** against rules aligned with Quarkus DTOs
@@ -13,8 +13,10 @@ AWS Lambda (**Python 3.11**) that ingests vertical onboarding Excel workbooks in
 7. **Report** → CloudWatch + optional S3 (`REPORT_BUCKET`)
 
 ```
-S3 (.xlsx) → parse_workbook (all worksheet tabs) → synthesize → ingest → report
+S3 (.xlsx) → parse_workbook (each Excel tab) → synthesize (merge all tabs) → ingest → report
 ```
+
+Empty tabs (no Merchant/Store rows) are skipped. The ingest report includes `worksheets`: tab name + which logical pages were found per tab.
 
 ## Mongo collections (`MONGO_DATABASE`, default `merchant`)
 

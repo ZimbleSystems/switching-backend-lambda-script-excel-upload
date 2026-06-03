@@ -1,7 +1,7 @@
 """Convert per-page parsed dicts into orchestrator-ready records (entity-shaped)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from .nested_builders import (
     block_flag_to_bool,
@@ -90,8 +90,8 @@ def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_ty
     return rec
 
 
-def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    out: Dict[str, List[Dict[str, Any]]] = {
+def _empty_output() -> Dict[str, List[Dict[str, Any]]]:
+    return {
         "demographic": [],
         "merchant_criteria": [],
         "instrument_criteria": [],
@@ -102,6 +102,10 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
         "store": [],
     }
 
+
+def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    out = _empty_output()
+
     merchant_pg = parsed.get("merchant", {})
     store_pg = parsed.get("store", {})
     chain_pg = parsed.get("chain", {})
@@ -110,6 +114,7 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
 
     if _is_blank(merchant_pg.get("merchant_org")):
         merchant_pg["merchant_org"] = 6032
+    org_default = merchant_pg.get("merchant_org", 6032)
     chain_status = transform_all({"chain_status": chain_pg.get("chain_status")}).get("chain_status", "A")
     merchant_crit_id: int | None = None
     instrument_crit_id: int | None = None
@@ -263,3 +268,24 @@ def synthesize(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, An
         out["store"].append(rec)
 
     return out
+
+
+def synthesize(
+    parsed_workbooks: Union[Dict[str, Dict[str, Any]], List[Dict[str, Dict[str, Any]]]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Build orchestrator-ready records from one or more parsed worksheet bundles.
+
+    Each worksheet tab is processed independently (its own merchant/store/chain set).
+    """
+    if isinstance(parsed_workbooks, dict):
+        pages_list = [parsed_workbooks]
+    else:
+        pages_list = parsed_workbooks
+
+    merged = _empty_output()
+    for pages in pages_list:
+        one = _synthesize_one(pages)
+        for sheet, rows in one.items():
+            merged[sheet].extend(rows)
+    return merged
