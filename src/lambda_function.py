@@ -59,12 +59,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # no
 
             payload = _download(bucket, key)
             bundles = parse_workbook(payload)
+            logger.info("parsed %d worksheet(s) from s3://%s/%s", len(bundles), bucket, key)
+            worksheets_meta = []
+            for b in bundles:
+                pages = list(b["pages"].keys())
+                logger.info(
+                    "parsed worksheet=%r pages=%s merchant_id=%s store_id=%s",
+                    b["worksheet"],
+                    pages,
+                    (b["pages"].get("merchant") or {}).get("merchant_id"),
+                    (b["pages"].get("store") or {}).get("store_id"),
+                )
+                worksheets_meta.append({"name": b["worksheet"], "pages": pages})
             records = synthesize([b["pages"] for b in bundles])
             file_report = ingest(records, writer)
-            file_report["worksheets"] = [
-                {"name": b["worksheet"], "pages": list(b["pages"].keys())}
-                for b in bundles
-            ]
+            file_report["worksheets"] = worksheets_meta
             file_report["source"] = f"s3://{bucket}/{key}"
             overall["files"].append(file_report)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Union
 
-from .nested_builders import (
+from nested_builders import (
     block_flag_to_bool,
     build_address,
     build_channels,
@@ -26,10 +26,11 @@ def _is_blank(v: Any) -> bool:
     return v is None or (isinstance(v, str) and v.strip() == "")
 
 
-def _str_or_none(v: Any) -> Any:
+def _str_or_none(v: Any) -> str | None:
+    """String ids for Mongo (merchant_id, store_id, …); Excel numbers become \"113\"."""
     if _is_blank(v):
         return None
-    return str(v).strip() if not isinstance(v, (int, float, bool)) else v
+    return str(v).strip()
 
 
 def _optional_criteria_id(*candidates: Any) -> int | None:
@@ -164,6 +165,8 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
     if merchant_crit_id is not None:
         _sync_merchant_criteria_refs(merchant_crit_id, merchant_pg, store_pg, mcrit_pg)
 
+    merchant_id_for_tab: str | None = None
+
     if _page_has_entity(merchant_pg, "merchant_id"):
         mid = _ensure_demographic_id(merchant_pg, "merchant_demographics_id", "dm")
         out["demographic"].append(_build_demographic(merchant_pg, mid, "M"))
@@ -253,6 +256,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             rec["channels_and_identifiers"] = channels
         fill_missing_required(rec, SHEETS["merchant"]["schema"])
         out["merchant"].append(rec)
+        merchant_id_for_tab = rec.get("merchant_id")
 
     if _page_has_entity(store_pg, "store_id"):
         if _is_blank(store_pg.get("store_id")):
@@ -262,7 +266,13 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         if _is_blank(store_pg.get("store_governing_state")):
             store_pg["store_governing_state"] = "NA"
         if _is_blank(store_pg.get("store_merchant_id")):
-            store_pg["store_merchant_id"] = merchant_pg.get("merchant_id") or auto_id("m")
+            store_pg["store_merchant_id"] = (
+                merchant_id_for_tab
+                or _str_or_none(merchant_pg.get("merchant_id"))
+                or auto_id("m")
+            )
+        else:
+            store_pg["store_merchant_id"] = _str_or_none(store_pg.get("store_merchant_id"))
         ttype, tid = _first_table_fk(store_pg)
         chain_id = store_pg.get("chain_id_link")
         rec = transform_all({
@@ -308,19 +318,6 @@ def synthesize(
     Build orchestrator-ready records from one or more parsed worksheet bundles.
 
     Each worksheet tab is processed independently (its own merchant/store/chain set).
-    """
-    if isinstance(parsed_workbooks, dict):
-        pages_list = [parsed_workbooks]
-    else:
-        pages_list = parsed_workbooks
-
-    merged = _empty_output()
-    for pages in pages_list:
-        one = _synthesize_one(pages)
-        for sheet, rows in one.items():
-            merged[sheet].extend(rows)
-    return merged
-et tab is processed independently (its own merchant/store/chain set).
     """
     if isinstance(parsed_workbooks, dict):
         pages_list = [parsed_workbooks]
