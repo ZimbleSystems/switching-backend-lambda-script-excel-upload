@@ -1,0 +1,12 @@
+aws_region          = "ap-south-1"
+mongodb_secret_name = "dev-mongo-properties"
+mongo_database      = "merchant"
+vpc_name            = "dev-common-dev-vpc"
+subnet1_name        = "dev-common-dev-vpc-public-ap-south-1a"
+subnet2_name        = "dev-common-dev-vpc-public-ap-south-1b"
+security_group_name = ["dev-common-dev-public-sg"]
+upload_bucket_name  = "switching-dev-upload-bucket"
+report_bucket       = "switching-dev-report-bucket"
+create_python_layer = true
+project_code        = "switching"
+env                 = "dev"
