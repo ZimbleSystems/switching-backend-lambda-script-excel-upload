@@ -13,7 +13,7 @@ AWS Lambda (**Python 3.11**) that ingests vertical onboarding Excel workbooks in
 7. **Report** → CloudWatch + optional S3 (`REPORT_BUCKET`)
 
 ```
-S3 (.xlsx) → parse_workbook → synthesize → ingest → report
+S3 (.xlsx) → parse_workbook (all worksheet tabs) → synthesize → ingest → report
 ```
 
 ## Mongo collections (`MONGO_DATABASE`, default `merchant`)
@@ -38,11 +38,10 @@ excel-ingest-lambda/
 ├── lambda_function.py      # Handler: lambda_function.lambda_handler
 ├── requirements.txt
 ├── src/                    # Application code
-├── deployment/             # env.example, AWS deploy notes
 └── README.md
 ```
 
-Local dev tools (`local-dev/`, `local_runner.py`, `sample/`) are **not** in this repo — keep them on your machine or a separate dev branch/archive.
+Not in git (local only): `local-dev/`, `deployment/`, `sample/`, `local_runner.py`.
 
 ## Build `package.zip` for AWS
 
@@ -84,21 +83,23 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 | `MONGO_DATABASE` | Yes | e.g. `merchant` |
 | `REPORT_BUCKET` | No | S3 bucket for ingest JSON reports |
 
-See [`deployment/env.example`](deployment/env.example).
-
 ### S3 trigger
 
 - Upload bucket: `s3:ObjectCreated:*`, suffix `.xlsx`
-- Lambda needs `s3:GetObject` (upload) and `s3:PutObject` (report bucket if used)
+- Lambda needs `s3:GetObject` on upload bucket; `s3:PutObject` on report bucket if `REPORT_BUCKET` is set
+- Allow S3 to invoke the function (resource policy on function ARN)
 
-IAM and event details: [`deployment/serverless-handler-notes.md`](deployment/serverless-handler-notes.md).
+### IAM (minimum)
 
-## Remove dev files already on GitHub
+- `s3:GetObject` — upload bucket
+- `s3:PutObject` — report bucket (optional)
+- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+- VPC ENI permissions if Mongo is in a private VPC
 
-If `local-dev/`, `sample/`, or `local_runner.py` were pushed earlier:
+## Remove non-production paths already on GitHub
 
 ```bash
-git rm -r --cached local-dev sample local_runner.py 2>/dev/null || true
+git rm -r --cached local-dev deployment sample local_runner.py 2>/dev/null || true
 git add .gitignore README.md
 git commit -m "Track production code only"
 git push

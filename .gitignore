@@ -1,5 +1,6 @@
-# --- Not production (local dev, samples, local test runner) ---
+# --- Not production (local dev, deploy notes, samples, local test runner) ---
 local-dev/
+deployment/
 local_runner.py
 sample/
 
@@ -29,10 +30,9 @@ ENV/
 htmlcov/
 *.cover
 
-# --- Secrets / local env (use deployment/env.example as template) ---
+# --- Secrets / local env ---
 .env
 .env.*
-!.env.example
 secrets/
 *.pem
 *.key
