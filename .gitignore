@@ -6,7 +6,8 @@ sample/
 
 # --- Build / deploy artifacts (rebuilt in CI or on deploy host; not source) ---
 package.zip
-*.zip
+!layer/python.zip
+Lambda-def/lambda_function.zip
 python/
 build/
 dist/
@@ -55,5 +56,19 @@ desktop.ini
 *.swo
 
 # --- Optional: large local layer experiments ---
-layer/
 layers/
+
+.vscode/
+.vscode/*
+#-- IaC ---
+# Ignore Terraform state files and local configuration
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+**/.terraform/*
+.terraform.lock.hcl
+.terraform.lock.hcl.backup
+.terraformrc
+terraform.rc
+*.tfplan

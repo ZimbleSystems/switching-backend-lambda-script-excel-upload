@@ -1,0 +1,67 @@
+default:
+  image: hashicorp/terraform:1.5.7
+  tags:
+    - docker
+  before_script:
+    - terraform --version
+    - export AWS_ACCESS_KEY_ID=$AWS_DEV_ACCESS_KEY_ID
+    - export AWS_SECRET_ACCESS_KEY=$AWS_DEV_SECRET_ACCESS_KEY
+    - export AWS_DEFAULT_REGION=$AWS_DEV_DEFAULT_REGION
+stages:
+  - s3
+  - lambda
+  - destroy_lambda
+  - destroy_s3
+
+provision_s3:
+  stage: s3
+  script:
+    - echo "Provisioning S3 bucket for Excel uploads..."
+    - cd s3_creation
+    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform plan 
+    - terraform apply -auto-approve
+  rules:   
+   - if: '$CI_COMMIT_BRANCH == "main"'
+     changes:
+       - s3_creation/**/*
+
+provision_lambda:
+  stage: lambda
+  script:
+    - echo "Provisioning Lambda function for Excel uploads..."
+    - cd Lambda-def
+    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform plan
+    - terraform apply -auto-approve
+  rules:
+   - if: '$CI_COMMIT_BRANCH == "main"'
+     changes:
+       - Lambda-def/**/*
+       - src/**/*
+
+destroy_lambda:
+  stage: destroy_lambda
+  script:
+    - echo "Destroying Lambda function for Excel uploads..."
+    - cd Lambda-def
+    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=lambda/excel-ingest-lambda/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform destroy -auto-approve
+  rules: 
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - Lambda-def/**/*
+      when: manual
+
+destroy_s3:
+  stage: destroy_s3
+  script:
+    - echo "Destroying S3 bucket for Excel uploads..."
+    - cd s3_creation
+    - terraform init -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=s3/buckets-for-excel-ingest-service/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform destroy -auto-approve
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"' 
+      changes:
+        - s3_creation/**/*
+      when: manual

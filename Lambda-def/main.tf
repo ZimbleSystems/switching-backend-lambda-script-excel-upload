@@ -178,7 +178,7 @@ resource "aws_lambda_function" "excel_ingest_lambda" {
   filename      = data.archive_file.lambda_zip.output_path
   function_name = "${var.project_code}-${var.env}-excel-ingest-lambda"
   role          = aws_iam_role.lambda_role.arn
-  handler       = "src.lambda_function.lambda_handler"
+  handler       = "lambda_function.lambda_handler"
   runtime       = "python3.11"
   architectures = ["arm64"]
   timeout       = var.lambda_timeout
