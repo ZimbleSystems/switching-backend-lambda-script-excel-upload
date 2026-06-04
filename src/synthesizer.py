@@ -193,9 +193,7 @@ def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_ty
     emails = build_emails(page)
     if emails:
         rec["emails"] = emails
-    sm = build_social_media(page)
-    if sm:
-        rec["social_media"] = sm
+    rec["social_media"] = build_social_media(page)
     return rec
 
 

@@ -138,18 +138,25 @@ def build_emails(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     }]
 
 
-def build_social_media(page: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    sm = {}
+def build_social_media(page: Dict[str, Any]) -> Dict[str, str]:
+    """Always return social_media object; ids are \"\" when Excel has no values."""
+    sm: Dict[str, str] = {
+        "facebook_id": "",
+        "instagram_id": "",
+        "google_id": "",
+    }
     for key, bson in (
         ("facebook_url", "facebook_id"),
         ("instagram_url", "instagram_id"),
-        ("twitter_url", "x_id"),
         ("google_id", "google_id"),
     ):
         v = _s(page.get(key))
         if v:
             sm[bson] = v
-    return sm or None
+    twitter = _s(page.get("twitter_url"))
+    if twitter:
+        sm["x_id"] = twitter
+    return sm
 
 
 def build_channels(page: Dict[str, Any]) -> Optional[List[Dict[str, str]]]:
