@@ -48,7 +48,7 @@ def _ie_and_list(raw: Any) -> Tuple[str, List[str]]:
     return ie, vals
 
 
-def _blocking_pair(intl: Any, value: Any) -> Optional[Dict[str, str]]:
+def _blocking_pair(intl: Any, value: Any, *, value_field: str) -> Optional[Dict[str, str]]:
     if _blank(value):
         return None
     ie = "N"
@@ -56,7 +56,11 @@ def _blocking_pair(intl: Any, value: Any) -> Optional[Dict[str, str]]:
         ie = transform("block_x", str(intl)) if isinstance(transform("x", str(intl)), str) else "N"
         if ie not in ("I", "E", "N"):
             ie = "N"
-    return {"international": ie, "value": str(value).strip()}
+    mapped = transform(value_field, value)
+    return {
+        "international": ie,
+        "value": str(mapped).strip() if mapped is not None else str(value).strip(),
+    }
 
 
 def block_flag_to_bool(v: Any) -> bool:
@@ -78,13 +82,13 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if not _blank(page.get("city")):
         block["city"] = _s(page.get("city"))
     if not _blank(page.get("state")):
-        block["state"] = _s(page.get("state"))
+        block["state"] = _s(transform("state", page.get("state")))
     if not _blank(page.get("postal_code")):
         block["postal_code"] = _s(page.get("postal_code"))
     if not _blank(page.get("country")):
-        block["country_code"] = _s(page.get("country"))
+        block["country_code"] = _s(transform("country", page.get("country")))
     if not _blank(page.get("language")):
-        block["language"] = _s(page.get("language"))
+        block["language"] = _s(transform("language", page.get("language")))
 
     loc: Dict[str, Any] = {}
     if not _blank(page.get("latitude")):
@@ -92,13 +96,15 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if not _blank(page.get("longitude")):
         loc["longitude"] = _s(page.get("longitude"))
     if not _blank(page.get("latitude_direction")):
-        loc["latitude_direction"] = _s(page.get("latitude_direction"))
+        loc["latitude_direction"] = _s(transform("latitude_direction", page.get("latitude_direction")))
     if not _blank(page.get("longitude_direction")):
-        loc["longitude_direction"] = _s(page.get("longitude_direction"))
+        loc["longitude_direction"] = _s(transform("longitude_direction", page.get("longitude_direction")))
 
     loc_ids = {}
     if not _blank(page.get("location_identifier_type")):
-        loc_ids[_s(page.get("location_identifier_type"))] = _s(page.get("location_identifier_value")) or ""
+        loc_key = _s(transform("location_identifier_type", page.get("location_identifier_type")))
+        if loc_key:
+            loc_ids[loc_key] = _s(page.get("location_identifier_value")) or ""
 
     addr: Dict[str, Any] = {"primary": True, "address_blocks": [block]}
     at = transform("address_type", page.get("address_type"))
@@ -116,7 +122,7 @@ def build_phones(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
         return None
     return [{
         "phone_type": transform("phone_type", page.get("phone_type")),
-        "phone_country": _s(page.get("phone_country")),
+        "phone_country": _s(transform("phone_country", page.get("phone_country"))),
         "phone": _s(page.get("phone_number")),
         "primary": True,
     }]
@@ -208,14 +214,27 @@ def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     ie_cur, currencies = _ie_and_list(page.get("currencies_list"))
     ie_mcc, _mcc_vals = _ie_and_list(page.get("mcc_list"))
 
-    purchase = _blocking_pair(page.get("purchase_international_type"), page.get("purchase_type"))
-    entry = _blocking_pair(page.get("entry_international_type"), page.get("entry_type"))
-    limit = _blocking_pair(page.get("limit_international_type"), page.get("limit_type"))
+    purchase = _blocking_pair(
+        page.get("purchase_international_type"),
+        page.get("purchase_type"),
+        value_field="purchase_type",
+    )
+    entry = _blocking_pair(
+        page.get("entry_international_type"),
+        page.get("entry_type"),
+        value_field="entry_type",
+    )
+    limit = _blocking_pair(
+        page.get("limit_international_type"),
+        page.get("limit_type"),
+        value_field="limit_type",
+    )
 
     tx_map = {}
     if not _blank(page.get("tx_limit_type")):
-        tx_map[str(page.get("tx_limit_type"))] = {
-            "limit_type": _s(page.get("tx_limit_type")),
+        limit_code = transform("tx_limit_type", page.get("tx_limit_type"))
+        tx_map[str(limit_code)] = {
+            "limit_type": _s(limit_code),
             "transaction_amt": page.get("tx_amount"),
             "transaction_nbr": page.get("tx_limit"),
         }
@@ -246,7 +265,7 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     timed = []
     if not _blank(page.get("timed_limit_type")):
         timed.append({
-            "limit_type": _s(page.get("timed_limit_type")),
+            "limit_type": _s(transform("timed_limit_type", page.get("timed_limit_type"))),
             "transaction_amt": page.get("timed_tx_amount"),
             "transaction_count": page.get("timed_tx_count"),
             "time_limit": page.get("timed_time_limit"),
@@ -255,7 +274,7 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     daily = []
     if not _blank(page.get("daily_limit_type")):
         daily.append({
-            "limit_type": _s(page.get("daily_limit_type")),
+            "limit_type": _s(transform("daily_limit_type", page.get("daily_limit_type"))),
             "transaction_amt": page.get("daily_tx_amount"),
             "transaction_count": page.get("daily_tx_count"),
         })

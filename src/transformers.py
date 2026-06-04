@@ -1,126 +1,71 @@
-"""Free-text Excel value -> canonical service enum.
-
-Each map is keyed by the lower-cased / stripped Excel value. If a value
-is unrecognised, the original is returned unchanged so the validator can
-flag it explicitly with a useful message ("must be one of [...] got X").
-"""
+"""Map Excel display values to canonical codes (config_metadata_maps.py)."""
 from __future__ import annotations
 
-import unicodedata
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from config_metadata_maps import map_element_value
 
-def _norm_key(s: str) -> str:
-    """Lowercase, strip accents — matches config-metadata element `state` displays."""
-    s = unicodedata.normalize("NFKD", str(s))
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return s.lower().strip()
-
-
-# config-metadata-switching application.yml — element: state (MX)
-_STATE_ENTRIES: tuple[tuple[str, str], ...] = (
-    ("AGU", "Aguascalientes"),
-    ("BCN", "Baja California"),
-    ("BCS", "Baja California Sur"),
-    ("CAM", "Campeche"),
-    ("CHP", "Chiapas"),
-    ("CHH", "Chihuahua"),
-    ("COA", "Coahuila de Zaragoza"),
-    ("COL", "Colima"),
-    ("CMX", "Ciudad de México"),
-    ("DUR", "Durango"),
-    ("GUA", "Guanajuato"),
-    ("GRO", "Guerrero"),
-    ("HID", "Hidalgo"),
-    ("JAL", "Jalisco"),
-    ("MEX", "Estado de México"),
-    ("MIC", "Michoacán de Ocampo"),
-    ("MOR", "Morelos"),
-    ("NAY", "Nayarit"),
-    ("NLE", "Nuevo León"),
-    ("OAX", "Oaxaca"),
-    ("PUE", "Puebla"),
-    ("QUE", "Querétaro"),
-    ("ROO", "Quintana Roo"),
-    ("SLP", "San Luis Potosí"),
-    ("SIN", "Sinaloa"),
-    ("SON", "Sonora"),
-    ("TAB", "Tabasco"),
-    ("TAM", "Tamaulipas"),
-    ("TLA", "Tlaxcala"),
-    ("VER", "Veracruz de Ignacio de la Llave"),
-    ("YUC", "Yucatán"),
-    ("ZAC", "Zacatecas"),
-)
-
-_STATE_CODES: frozenset[str] = frozenset(code for code, _ in _STATE_ENTRIES)
-
-GOVERNING_STATE_MAP: Dict[str, str] = {}
-for _code, _display in _STATE_ENTRIES:
-    GOVERNING_STATE_MAP[_norm_key(_code)] = _code
-    GOVERNING_STATE_MAP[_norm_key(_display)] = _code
-
-# Common Excel / typo variants without accents
-GOVERNING_STATE_MAP.update({
-    _norm_key("Nuevo Leon"): "NLE",
-    _norm_key("Ciudad de Mexico"): "CMX",
-    _norm_key("Estado de Mexico"): "MEX",
-    _norm_key("Michoacan de Ocampo"): "MIC",
-    _norm_key("Queretaro"): "QUE",
-    _norm_key("San Luis Potosi"): "SLP",
-    _norm_key("Yucatan"): "YUC",
-})
-
-STATUS_MAP: Dict[str, str] = {
-    "activo": "A", "activado": "A", "active": "A", "activated": "A", "a": "A",
-    "inactivo": "I", "inactive": "I", "i": "I",
+# Excel canonical field -> metadata element name (application.yml)
+FIELD_TO_ELEMENT: Dict[str, str] = {
+    "merchant_governing_state": "state",
+    "store_governing_state": "state",
+    "chain_governing_state": "state",
+    "merchant_status": "entity_status",
+    "store_status": "entity_status",
+    "chain_status": "entity_status",
+    "state": "state",
+    "address_type": "address_type",
+    "language": "language",
+    "email_type": "email_type",
+    "phone_type": "phone_type",
+    "phone_country": "phone_country",
+    "longitude_direction": "longitude_direction",
+    "latitude_direction": "latitude_direction",
+    "location_identifier_type": "location_identifiers",
+    "country": "country_code_all",
+    "merchant_time_zone": "time_zone",
+    "purchase_type": "purchase_type",
+    "entry_type": "entry_type",
+    "limit_type": "limit_type",
+    "tx_limit_type": "limit_type",
+    "timed_limit_type": "limit_type",
+    "daily_limit_type": "limit_type",
+    "timed_time_unit": "time_unit",
+    "susp_tracking_time_unit": "time_unit",
+    "susp_time_unit": "time_unit",
+    "susp_type": "temp_perm",
 }
 
+# Criteria ie_* flags: Include/Exclude/None -> I|E|N (not international_applied).
 BLOCK_MAP: Dict[str, str] = {
-    "yes": "E", "y": "E", "true": "E", "maybe": "N",
-    "no": "N", "n": "N", "false": "N",
-    "include": "I", "included": "I",
-    "exclude": "E", "excluded": "E",
+    "yes": "E",
+    "y": "E",
+    "true": "E",
+    "maybe": "N",
+    "no": "N",
+    "n": "N",
+    "false": "N",
+    "include": "I",
+    "included": "I",
+    "exclude": "E",
+    "excluded": "E",
     "none": "N",
-}
-
-ADDRESS_TYPE_MAP: Dict[str, str] = {
-    "physical": "P", "p": "P",
-    "billing": "B", "b": "B",
-}
-
-PHONE_TYPE_MAP: Dict[str, str] = {
-    "linea fija": "PL", "personal landline": "PL", "pl": "PL",
-    "linea movil": "PM", "personal mobile": "PM", "pm": "PM",
-    "trabajo fija": "WL", "work landline": "WL", "wl": "WL",
-    "trabajo movil": "WM", "work mobile": "WM", "wm": "WM",
-    "alterno": "AP", "alternate": "AP", "ap": "AP",
-}
-
-EMAIL_TYPE_MAP: Dict[str, str] = {
-    "personal": "P", "p": "P",
-    "trabajo": "W", "work": "W", "w": "W",
-    "organizacional": "W", "organizational": "W", "organisation": "W",
-}
-
-TIME_UNIT_MAP: Dict[str, str] = {
-    "second": "SECOND", "seconds": "SECOND", "sec": "SECOND", "secs": "SECOND",
-    "minute": "MINUTE", "minutes": "MINUTE", "min": "MINUTE", "mins": "MINUTE",
-    "hour": "HOUR", "hours": "HOUR", "hr": "HOUR", "hrs": "HOUR",
-    "day": "DAY", "days": "DAY",
-    "week": "WEEK", "weeks": "WEEK",
-    "month": "MONTH", "months": "MONTH",
-    "year": "YEAR", "years": "YEAR",
-}
-
-TEMP_PERM_MAP: Dict[str, str] = {
-    "temporary": "TEMPORARY", "temporal": "TEMPORARY", "temp": "TEMPORARY",
-    "permanent": "PERMANENT", "permanente": "PERMANENT", "perm": "PERMANENT",
+    "international": "I",
+    "domestic": "E",
+    "both": "N",
 }
 
 BOOLEAN_MAP: Dict[str, bool] = {
-    "yes": True, "y": True, "true": True, "1": True, "si": True,
-    "no": False, "n": False, "false": False, "0": False,
+    "yes": True,
+    "y": True,
+    "true": True,
+    "1": True,
+    "si": True,
+    "sí": True,
+    "no": False,
+    "n": False,
+    "false": False,
+    "0": False,
 }
 
 
@@ -133,44 +78,48 @@ def _try_map(value: Any, mapping: Dict[str, Any]) -> Any:
     return mapping.get(s.lower(), value)
 
 
-def _governing_state(value: Any) -> Any:
-    """Map metadata `state` display (or code) -> stored code (e.g. NLE)."""
-    if value is None:
-        return None
-    s = str(value).strip()
-    if not s:
-        return None
-    upper = s.upper()
-    if upper in _STATE_CODES:
-        return upper
-    return GOVERNING_STATE_MAP.get(_norm_key(s), value)
+def _metadata_element(field: str) -> Optional[str]:
+    if field in FIELD_TO_ELEMENT:
+        return FIELD_TO_ELEMENT[field]
+    f = field.lower()
+    if f.endswith("_governing_state"):
+        return "state"
+    if f.endswith("_status"):
+        return "entity_status"
+    if f.endswith("time_unit") or f == "time_unit":
+        return "time_unit"
+    return None
 
 
 def transform(field: str, value: Any) -> Any:
-    """Map free-text values to canonical enum values when the field name
-    matches a known semantic family. Otherwise the original is returned."""
+    """Map one field using config-metadata element tables when configured."""
     if value is None:
         return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    element = _metadata_element(field)
+    if element:
+        mapped = map_element_value(element, value)
+        if mapped is not None and str(mapped).strip():
+            return mapped
+
     f = field.lower()
-    if f.endswith("_governing_state"):
-        return _governing_state(value)
-    if f.endswith("_status"):
-        return _try_map(value, STATUS_MAP)
     if f.startswith("block_"):
         return _try_map(value, BLOCK_MAP)
-    if f == "address_type":
-        return _try_map(value, ADDRESS_TYPE_MAP)
-    if f == "phone_type":
-        return _try_map(value, PHONE_TYPE_MAP)
-    if f == "email_type":
-        return _try_map(value, EMAIL_TYPE_MAP)
-    if f.endswith("time_unit") or f == "time_unit":
-        return _try_map(value, TIME_UNIT_MAP)
-    if f == "temp_perm":
-        return _try_map(value, TEMP_PERM_MAP)
     if f in ("check_for_expiry", "validate_instrument"):
         return _try_map(value, BOOLEAN_MAP)
     return value
+
+
+def transform_page(page: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply metadata mapping to all scalar fields in a parsed Excel page."""
+    return {key: transform(key, val) for key, val in page.items()}
+
+
+def transform_workbook_pages(pages: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    return {name: transform_page(page) for name, page in pages.items()}
 
 
 def transform_all(record: Dict[str, Any]) -> Dict[str, Any]:

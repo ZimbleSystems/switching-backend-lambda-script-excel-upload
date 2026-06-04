@@ -19,7 +19,7 @@ from nested_builders import (
 )
 from defaults import auto_id, coerce_int, fill_missing_required
 from schemas import SHEETS
-from transformers import transform_all
+from transformers import transform_all, transform_workbook_pages
 
 
 def _is_blank(v: Any) -> bool:
@@ -214,6 +214,8 @@ def _empty_output() -> Dict[str, List[Dict[str, Any]]]:
 
 def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     out = _empty_output()
+
+    parsed = transform_workbook_pages(parsed)
 
     merchant_pg = parsed.get("merchant", {})
     store_pg = parsed.get("store", {})
