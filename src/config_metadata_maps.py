@@ -761,6 +761,26 @@ def _norm_key(s: str) -> str:
     return text.lower().strip()
 
 
+def _alias_keys_for_display(display: str, code: str) -> list[str]:
+    """Extra lookup keys from application.yml display labels (e.g. GROCERIES(G) -> groceries)."""
+    keys: list[str] = []
+    if not display:
+        return keys
+    disp = str(display).strip()
+    keys.append(_norm_key(disp))
+    if "(" in disp:
+        before = disp.split("(", 1)[0].strip()
+        if before:
+            keys.append(_norm_key(before))
+        inner = disp.split("(", 1)[1].split(")", 1)[0].strip().strip('"')
+        if inner:
+            keys.append(_norm_key(inner))
+    # Display often ends with (CODE) — e.g. AIRLINE (AI) -> ai
+    if code:
+        keys.append(_norm_key(code))
+    return keys
+
+
 def _build_lookups() -> tuple[Dict[str, Dict[str, str]], Dict[str, FrozenSet[str]]]:
     lookup: Dict[str, Dict[str, str]] = {}
     canonical: Dict[str, FrozenSet[str]] = {}
@@ -771,7 +791,8 @@ def _build_lookups() -> tuple[Dict[str, Dict[str, str]], Dict[str, FrozenSet[str
             codes.add(code)
             m[_norm_key(code)] = code
             if display:
-                m[_norm_key(display)] = code
+                for alias in _alias_keys_for_display(display, code):
+                    m[alias] = code
         lookup[element] = m
         canonical[element] = frozenset(codes)
     return lookup, canonical
@@ -780,8 +801,12 @@ def _build_lookups() -> tuple[Dict[str, Dict[str, str]], Dict[str, FrozenSet[str
 ELEMENT_LOOKUP, CANONICAL_CODES = _build_lookups()
 
 
-def map_element_value(element: str, value: Any) -> Any:
-    """Map Excel/UI text to canonical code; return original if unknown."""
+def map_element_value(element: str, value: Any, *, strict: bool = True) -> Any:
+    """
+    Map Excel/UI text to canonical application.yml code.
+
+    When strict=True (default), unknown values return None — never store raw display text.
+    """
     if value is None:
         return None
     text = str(value).strip()
@@ -789,14 +814,14 @@ def map_element_value(element: str, value: Any) -> Any:
         return None
     m = ELEMENT_LOOKUP.get(element)
     if not m:
-        return value
+        return None if strict else value
     norm = _norm_key(text)
     if norm in m:
         return m[norm]
-    upper = text.upper()
     codes = CANONICAL_CODES.get(element, frozenset())
-    if upper in codes:
-        return upper
     if text in codes:
         return text
-    return value
+    upper = text.upper()
+    if upper in codes:
+        return upper
+    return None if strict else value

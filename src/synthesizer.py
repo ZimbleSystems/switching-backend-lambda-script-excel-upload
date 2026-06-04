@@ -19,7 +19,7 @@ from nested_builders import (
 )
 from defaults import auto_id, coerce_int, fill_missing_required
 from schemas import SHEETS
-from transformers import transform_all, transform_workbook_pages
+from transformers import strict_transform_demographic, transform_all, transform_workbook_pages
 
 
 def _is_blank(v: Any) -> bool:
@@ -194,7 +194,7 @@ def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_ty
     if emails:
         rec["emails"] = emails
     rec["social_media"] = build_social_media(page)
-    return rec
+    return strict_transform_demographic(rec)
 
 
 def _empty_output() -> Dict[str, List[Dict[str, Any]]]:

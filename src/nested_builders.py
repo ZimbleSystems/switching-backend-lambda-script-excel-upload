@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from transformers import transform
+from transformers import map_field, strict_transform_blocking_values, transform
 
 
 def _blank(v: Any) -> bool:
@@ -53,10 +53,12 @@ def _blocking_pair(intl: Any, value: Any, *, value_field: str) -> Optional[Dict[
         return None
     ie = "N"
     if not _blank(intl):
-        ie = transform("block_x", str(intl)) if isinstance(transform("x", str(intl)), str) else "N"
+        ie = map_field("block_x", str(intl))
+        if not isinstance(ie, str):
+            ie = "N"
         if ie not in ("I", "E", "N"):
             ie = "N"
-    mapped = transform(value_field, value)
+    mapped = map_field(value_field, value)
     return {
         "international": ie,
         "value": str(mapped).strip() if mapped is not None else str(value).strip(),
@@ -82,13 +84,13 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if not _blank(page.get("city")):
         block["city"] = _s(page.get("city"))
     if not _blank(page.get("state")):
-        block["state"] = _s(transform("state", page.get("state")))
+        block["state"] = _s(map_field("state", page.get("state")))
     if not _blank(page.get("postal_code")):
         block["postal_code"] = _s(page.get("postal_code"))
     if not _blank(page.get("country")):
-        block["country_code"] = _s(transform("country", page.get("country")))
+        block["country_code"] = _s(map_field("country", page.get("country")))
     if not _blank(page.get("language")):
-        block["language"] = _s(transform("language", page.get("language")))
+        block["language"] = _s(map_field("language", page.get("language")))
 
     loc: Dict[str, Any] = {}
     if not _blank(page.get("latitude")):
@@ -96,18 +98,18 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if not _blank(page.get("longitude")):
         loc["longitude"] = _s(page.get("longitude"))
     if not _blank(page.get("latitude_direction")):
-        loc["latitude_direction"] = _s(transform("latitude_direction", page.get("latitude_direction")))
+        loc["latitude_direction"] = _s(map_field("latitude_direction", page.get("latitude_direction")))
     if not _blank(page.get("longitude_direction")):
-        loc["longitude_direction"] = _s(transform("longitude_direction", page.get("longitude_direction")))
+        loc["longitude_direction"] = _s(map_field("longitude_direction", page.get("longitude_direction")))
 
     loc_ids = {}
     if not _blank(page.get("location_identifier_type")):
-        loc_key = _s(transform("location_identifier_type", page.get("location_identifier_type")))
+        loc_key = _s(map_field("location_identifier_type", page.get("location_identifier_type")))
         if loc_key:
             loc_ids[loc_key] = _s(page.get("location_identifier_value")) or ""
 
     addr: Dict[str, Any] = {"primary": True, "address_blocks": [block]}
-    at = transform("address_type", page.get("address_type"))
+    at = map_field("address_type", page.get("address_type"))
     if at:
         addr["address_type"] = at
     if loc:
@@ -120,22 +122,30 @@ def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
 def build_phones(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if _blank(page.get("phone_number")):
         return None
-    return [{
-        "phone_type": transform("phone_type", page.get("phone_type")),
-        "phone_country": _s(transform("phone_country", page.get("phone_country"))),
+    phone_type = map_field("phone_type", page.get("phone_type"))
+    phone: Dict[str, Any] = {
         "phone": _s(page.get("phone_number")),
         "primary": True,
-    }]
+    }
+    if phone_type:
+        phone["phone_type"] = phone_type
+    phone_country = map_field("phone_country", page.get("phone_country"))
+    if phone_country:
+        phone["phone_country"] = _s(phone_country)
+    return [phone]
 
 
 def build_emails(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     if _blank(page.get("email")):
         return None
-    return [{
-        "email_type": transform("email_type", page.get("email_type")),
+    email: Dict[str, Any] = {
         "email": _s(page.get("email")),
         "primary": True,
-    }]
+    }
+    email_type = map_field("email_type", page.get("email_type"))
+    if email_type:
+        email["email_type"] = email_type
+    return [email]
 
 
 def build_social_media(page: Dict[str, Any]) -> Dict[str, str]:
@@ -239,14 +249,15 @@ def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
 
     tx_map = {}
     if not _blank(page.get("tx_limit_type")):
-        limit_code = transform("tx_limit_type", page.get("tx_limit_type"))
-        tx_map[str(limit_code)] = {
-            "limit_type": _s(limit_code),
-            "transaction_amt": page.get("tx_amount"),
-            "transaction_nbr": page.get("tx_limit"),
-        }
+        limit_code = map_field("tx_limit_type", page.get("tx_limit_type"))
+        if limit_code:
+            tx_map[str(limit_code)] = {
+                "limit_type": _s(limit_code),
+                "transaction_amt": page.get("tx_amount"),
+                "transaction_nbr": page.get("tx_limit"),
+            }
 
-    return {
+    out = {
         "ie_blocked_countries": ie_c,
         "blocked_countries": countries,
         "ie_block_states": ie_s,
@@ -266,22 +277,26 @@ def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
         "blocked_terminal_types": [],
         "transaction_limits_map": tx_map,
     }
+    strict_transform_blocking_values(out.get("blocked_purchase_types") or [], "purchase_type")
+    strict_transform_blocking_values(out.get("blocked_entry_types") or [], "entry_type")
+    strict_transform_blocking_values(out.get("block_limit_types") or [], "limit_type")
+    return out
 
 
 def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     timed = []
     if not _blank(page.get("timed_limit_type")):
         timed.append({
-            "limit_type": _s(transform("timed_limit_type", page.get("timed_limit_type"))),
+            "limit_type": _s(map_field("timed_limit_type", page.get("timed_limit_type"))),
             "transaction_amt": page.get("timed_tx_amount"),
             "transaction_count": page.get("timed_tx_count"),
             "time_limit": page.get("timed_time_limit"),
-            "time_unit": transform("timed_time_unit", page.get("timed_time_unit")),
+            "time_unit": map_field("timed_time_unit", page.get("timed_time_unit")),
         })
     daily = []
     if not _blank(page.get("daily_limit_type")):
         daily.append({
-            "limit_type": _s(transform("daily_limit_type", page.get("daily_limit_type"))),
+            "limit_type": _s(map_field("daily_limit_type", page.get("daily_limit_type"))),
             "transaction_amt": page.get("daily_tx_amount"),
             "transaction_count": page.get("daily_tx_count"),
         })
@@ -292,10 +307,12 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
             "response_code": _s(page.get("susp_response_code")),
             "no_declines": page.get("susp_no_declines"),
             "tracking_timeframe": page.get("susp_tracking_duration"),
-            "tracking_timeunit": transform("susp_tracking_time_unit", page.get("susp_tracking_time_unit")),
-            "temp_perm": transform("susp_type", page.get("susp_type")),
+            "tracking_timeunit": map_field(
+                "susp_tracking_time_unit", page.get("susp_tracking_time_unit")
+            ),
+            "temp_perm": map_field("susp_type", page.get("susp_type")),
             "susp_duration": page.get("susp_duration"),
-            "susp_timeunit": transform("susp_time_unit", page.get("susp_time_unit")),
+            "susp_timeunit": map_field("susp_time_unit", page.get("susp_time_unit")),
         })
     out: Dict[str, Any] = {}
     if timed:
@@ -305,7 +322,7 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     if susp:
         out["susp_criterias"] = susp
     if not _blank(page.get("check_for_expiry")):
-        out["check_expiry"] = transform("check_for_expiry", page.get("check_for_expiry"))
+        out["check_expiry"] = map_field("check_for_expiry", page.get("check_for_expiry"))
     if not _blank(page.get("validate_instrument")):
-        out["validate_instr_id"] = transform("validate_instrument", page.get("validate_instrument"))
+        out["validate_instr_id"] = map_field("validate_instrument", page.get("validate_instrument"))
     return out
