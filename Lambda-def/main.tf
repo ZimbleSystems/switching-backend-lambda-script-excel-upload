@@ -37,6 +37,15 @@ data "aws_subnet" "subnet_2" {
   }
 }
 
+# Fetch Subnet 3 by its Name tag AND scope it to the selected VPC
+data "aws_subnet" "subnet_3" {
+  vpc_id = data.aws_vpc.selected.id
+  filter {
+    name   = "tag:Name"
+    values = [var.subnet3_name]
+  }
+}
+
 data "aws_security_group" "selected" {
   vpc_id = data.aws_vpc.selected.id
   filter {
@@ -200,7 +209,8 @@ resource "aws_lambda_function" "excel_ingest_lambda" {
   vpc_config {
     subnet_ids = [
       data.aws_subnet.subnet_1.id,
-      data.aws_subnet.subnet_2.id
+      data.aws_subnet.subnet_2.id,
+      data.aws_subnet.subnet_3.id
     ]
     security_group_ids = [
       data.aws_security_group.selected.id

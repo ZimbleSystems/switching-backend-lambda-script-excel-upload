@@ -41,6 +41,11 @@ variable "subnet2_name" {
   description = "The value of the Name tag assigned to the second private deployment subnet."
 }
 
+variable "subnet3_name" {
+  type        = string
+  description = "The value of the Name tag assigned to the third private deployment subnet."
+}
+
 variable "security_group_name" {
   type        = list(string)
   description = "The list of string values matching the Name tags of your target security groups."
