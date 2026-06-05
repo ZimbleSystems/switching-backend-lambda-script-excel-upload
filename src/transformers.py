@@ -1,9 +1,10 @@
 """Map Excel display values to canonical codes (config_metadata_maps.py, strict)."""
 from __future__ import annotations
 
+import unicodedata
 from typing import Any, Dict, List, Optional
 
-from config_metadata_maps import map_element_value
+from config_metadata_maps import CANONICAL_CODES, map_element_value
 
 # Excel field name -> application.yml metadata element
 FIELD_TO_ELEMENT: Dict[str, str] = {
@@ -34,6 +35,60 @@ FIELD_TO_ELEMENT: Dict[str, str] = {
     "susp_tracking_time_unit": "time_unit",
     "susp_time_unit": "time_unit",
     "susp_type": "temp_perm",
+}
+
+# Extra Excel labels (e.g. Spanish template) -> canonical application.yml codes only.
+_PHONE_TYPE_ALIASES: Dict[str, str] = {
+    "personal landline": "PL",
+    "personal mobile": "PM",
+    "work landline": "WL",
+    "work mobile": "WM",
+    "linea fija": "PL",
+    "linea fijia": "PL",
+    "linea movil": "PM",
+    "linea móvil": "PM",
+    "trabajo fija": "WL",
+    "trabajo fijo": "WL",
+    "trabajo movil": "WM",
+    "trabajo móvil": "WM",
+    "pl": "PL",
+    "pm": "PM",
+    "wl": "WL",
+    "wm": "WM",
+    "additional 1": "1",
+    "additional 2": "2",
+    "additional 3": "3",
+    "additional 4": "4",
+    "adicional 1": "1",
+    "adicional 2": "2",
+    "adicional 3": "3",
+    "adicional 4": "4",
+}
+
+_EMAIL_TYPE_ALIASES: Dict[str, str] = {
+    "personal": "P",
+    "work": "W",
+    "trabajo": "W",
+    "organizacional": "W",
+    "organizational": "W",
+    "organisational": "W",
+    "organisation": "W",
+    "organization": "W",
+    "p": "P",
+    "w": "W",
+    "additional 1": "1",
+    "additional 2": "2",
+    "additional 3": "3",
+    "additional 4": "4",
+    "adicional 1": "1",
+    "adicional 2": "2",
+    "adicional 3": "3",
+    "adicional 4": "4",
+}
+
+FIELD_ALIASES: Dict[str, Dict[str, str]] = {
+    "phone_type": _PHONE_TYPE_ALIASES,
+    "email_type": _EMAIL_TYPE_ALIASES,
 }
 
 # Criteria ie_* on blocking rows use I|E|N (include/exclude/none), not international_applied.
@@ -69,6 +124,43 @@ BOOLEAN_MAP: Dict[str, bool] = {
 }
 
 
+def _norm_key(s: str) -> str:
+    text = unicodedata.normalize("NFKD", str(s))
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return text.lower().strip()
+
+
+def _canonical_for_field(field: str, code: str) -> Optional[str]:
+    element = _metadata_element(field)
+    if not element:
+        return None
+    allowed = CANONICAL_CODES.get(element, frozenset())
+    if code in allowed:
+        return code
+    return None
+
+
+def _lookup_field_alias(field: str, value: Any) -> Optional[str]:
+    aliases = FIELD_ALIASES.get(field)
+    if not aliases:
+        return None
+    code = aliases.get(_norm_key(str(value).strip()))
+    if code:
+        return _canonical_for_field(field, code)
+    return None
+
+
+def _map_metadata_field(field: str, value: Any) -> Optional[Any]:
+    """YAML metadata first, then Excel aliases; None if not a valid canonical code."""
+    element = _metadata_element(field)
+    if not element:
+        return None
+    mapped = map_element_value(element, value, strict=True)
+    if mapped is not None:
+        return mapped
+    return _lookup_field_alias(field, value)
+
+
 def _metadata_element(field: str) -> Optional[str]:
     if field in FIELD_TO_ELEMENT:
         return FIELD_TO_ELEMENT[field]
@@ -92,7 +184,7 @@ def map_field(field: str, value: Any) -> Any:
 
     element = _metadata_element(field)
     if element:
-        return map_element_value(element, value, strict=True)
+        return _map_metadata_field(field, value)
 
     f = field.lower()
     if (
@@ -150,8 +242,12 @@ def strict_transform_demographic(doc: Dict[str, Any]) -> Dict[str, Any]:
     for phone in doc.get("phone_numbers") or []:
         if not isinstance(phone, dict):
             continue
-        if phone.get("phone_type") is not None:
-            phone["phone_type"] = map_element_value("phone_type", phone["phone_type"], strict=True)
+        if "phone_type" in phone:
+            mapped_pt = map_field("phone_type", phone.get("phone_type"))
+            if mapped_pt:
+                phone["phone_type"] = mapped_pt
+            else:
+                del phone["phone_type"]
         if phone.get("phone_country") is not None:
             phone["phone_country"] = map_element_value(
                 "phone_country", phone["phone_country"], strict=True
@@ -160,8 +256,12 @@ def strict_transform_demographic(doc: Dict[str, Any]) -> Dict[str, Any]:
     for email in doc.get("emails") or []:
         if not isinstance(email, dict):
             continue
-        if email.get("email_type") is not None:
-            email["email_type"] = map_element_value("email_type", email["email_type"], strict=True)
+        if "email_type" in email:
+            mapped_et = map_field("email_type", email.get("email_type"))
+            if mapped_et:
+                email["email_type"] = mapped_et
+            else:
+                del email["email_type"]
 
     for addr in doc.get("addresses") or []:
         if not isinstance(addr, dict):
