@@ -4,8 +4,11 @@ AWS Lambda entry point.
 Trigger: S3 ObjectCreated event for an Excel file.
 
 Required environment variables:
-    MONGO_CONNECTION_STRING   e.g. mongodb+srv://user:pass@host/db
-    MONGO_DATABASE            e.g. merchant
+    API_GATEWAY_URL           e.g. https://iconn.poc.zimblesystems.click
+    COGNITO_CLIENT_ID
+    COGNITO_CLIENT_SECRET
+    COGNITO_TOKEN_URL
+    TENANT_ID
 
 Optional environment variables:
     REPORT_BUCKET             if set, the run report is written to this S3 bucket
@@ -21,7 +24,7 @@ from urllib.parse import unquote_plus
 import boto3
 
 from excel_parser import parse_workbook
-from mongo_writer import MongoWriter
+from api_client import ApiGatewayClient
 from orchestrator import ingest
 from synthesizer import synthesize
 
@@ -48,7 +51,7 @@ def _put_report(bucket: str, key: str, report: Dict[str, Any]) -> None:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # noqa: ARG001
     logger.info("event=%s", json.dumps(event, default=str)[:2000])
 
-    writer = MongoWriter()
+    client = ApiGatewayClient()
     overall: Dict[str, Any] = {"files": []}
 
     try:
@@ -77,7 +80,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # no
                 worksheets=worksheets,
                 per_tab=True,
             )
-            file_report = ingest(tab_records, writer)
+            file_report = ingest(tab_records, client)
             file_report["worksheets"] = worksheets_meta
             file_report["source"] = f"s3://{bucket}/{key}"
             overall["files"].append(file_report)
@@ -88,7 +91,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # no
                 _put_report(report_bucket, report_key, file_report)
                 logger.info("report written to s3://%s/%s", report_bucket, report_key)
     finally:
-        writer.close()
+        client.close()
 
     logger.info("ingest_report=%s", json.dumps(overall, default=str)[:5000])
     return {"statusCode": 200, "body": json.dumps(overall, default=str)}

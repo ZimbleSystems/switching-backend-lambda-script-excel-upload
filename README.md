@@ -9,11 +9,12 @@ AWS Lambda (**Python 3.11**) that ingests vertical onboarding Excel workbooks in
 3. **Synthesize** implicit records (demographics, table refs, defaults)
 4. **Transform** display text → service codes (`Activo` → `A`, `Nuevo León` → `NLE`, …)
 5. **Validate** against rules aligned with Quarkus DTOs
-6. **Upsert** to Mongo in dependency order
-7. **Report** → CloudWatch + optional S3 (`REPORT_BUCKET`)
+6. **Authenticate** via AWS Cognito to acquire a JWT token
+7. **Upsert** via HTTP to the **API Gateway** in dependency order
+8. **Report** → CloudWatch + optional S3 (`REPORT_BUCKET`)
 
 ```
-S3 (.xlsx) → parse_workbook (each Excel tab) → synthesize (per tab) → ingest (bundle order) → report
+S3 (.xlsx) → parse_workbook → synthesize → authenticate (Cognito) → ingest via API Gateway → report
 ```
 
 Empty tabs (no Merchant/Store rows) are skipped. The ingest report includes `worksheets`: tab name + which logical pages were found per tab.
@@ -27,17 +28,19 @@ Each Excel tab is ingested in order. **Duplicate primary keys** across tabs are 
 - **Store demographics** are written per tab when each tab has its own id (e.g. `DS_101`, `DS_104`).
 - Skips appear in `summary.<sheet>.skipped` and `errors[]` with optional `worksheet` (tab name).
 
-## Mongo collections (`MONGO_DATABASE`, default `merchant`)
+## API Gateway Endpoints
 
 
-| Sheet               | Collection             |
-| ------------------- | ---------------------- |
-| demographic         | `demographic`          |
-| merchant_criteria   | `criteria`             |
-| instrument_criteria | `instrument-criteria`  |              |
-| chain               | `chain_auth`           |
-| merchant            | `merchant_auth`        |
-| store               | `store_auth`           |
+| Sheet               | API Path                               |
+| ------------------- | -------------------------------------- |
+| demographic         | `/auth/demographic/v1/`                |
+| merchant_criteria   | `/config/merchant-criteria/v1/`        |
+| instrument_criteria | `/config/instrument-criteria/v1/`      |
+| chain               | `/auth/chain/v1/`                      |
+| merchant            | `/auth/merchant/v1/`                   |
+| store               | `/auth/store/v1/`                      |
+| connector           | `/config/connector-properties/v1/`     |
+| connector_table     | `/auth/connectorTable/v1/`             |
 
 
 Ingest order per tab: `demographic` → criteria → `chain` (if real id) → `merchant` → `store`.
@@ -91,11 +94,14 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 ### Environment variables
 
 
-| Key                       | Required | Description                       |
-| ------------------------- | -------- | --------------------------------- |
-| `MONGO_CONNECTION_STRING` | Yes      | Full Mongo URI                    |
-| `MONGO_DATABASE`          | Yes      | e.g. `merchant`                   |
-| `REPORT_BUCKET`           | No       | S3 bucket for ingest JSON reports |
+| Key                     | Required | Description                                    |
+| ----------------------- | -------- | ---------------------------------------------- |
+| `API_GATEWAY_URL`       | Yes      | e.g. `https://iconn.poc.zimblesystems.click`   |
+| `COGNITO_CLIENT_ID`     | Yes      | App Client ID for M2M authentication           |
+| `COGNITO_CLIENT_SECRET` | Yes      | App Client Secret                              |
+| `COGNITO_TOKEN_URL`     | Yes      | Cognito OAuth2 Token URL                       |
+| `TENANT_ID`             | Yes      | Target tenant ID (e.g. `zimble-tenant`)        |
+| `REPORT_BUCKET`         | No       | S3 bucket for ingest JSON reports              |
 
 
 ### S3 trigger
@@ -109,7 +115,7 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 - `s3:GetObject` — upload bucket
 - `s3:PutObject` — report bucket (optional)
 - `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
-- VPC ENI permissions if Mongo is in a private VPC
+- *Note: VPC ENI permissions for direct MongoDB access are no longer required. The Lambda makes standard HTTPS requests to the API Gateway.*
 
 ## Remove non-production paths already on GitHub
 

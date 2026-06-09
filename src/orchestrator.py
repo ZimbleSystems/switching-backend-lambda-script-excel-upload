@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set, Union
 
-from mongo_writer import MongoWriter
+from api_client import ApiGatewayClient
 from schemas import SHEETS
 from defaults import coerce_int, fill_missing_required
 from validators import validate_row
@@ -104,7 +104,7 @@ class IngestReport:
 
 
 def _parent_exists(
-    writer: MongoWriter,
+    client: ApiGatewayClient,
     parent_sheet: str,
     parent_id_value: Any,
     created_ids: Dict[str, Set[str]],
@@ -113,7 +113,7 @@ def _parent_exists(
     if str(parent_id_value) in created_ids.get(parent_sheet, set()):
         return True
     parent_id_field_bson = parent_cfg["schema"][parent_cfg["id_field"]]["bson"]
-    return writer.exists(parent_cfg["collection"], parent_id_field_bson, parent_id_value)
+    return client.exists(parent_sheet, parent_id_field_bson, parent_id_value)
 
 
 def _row_worksheet(row: Dict[str, Any]) -> str | None:
@@ -168,7 +168,7 @@ def _process_row(
     sheet: str,
     row: Dict[str, Any],
     row_idx: int,
-    writer: MongoWriter,
+    client: ApiGatewayClient,
     report: IngestReport,
 ) -> None:
     cfg = SHEETS[sheet]
@@ -203,7 +203,7 @@ def _process_row(
                 parent_missing = True
                 break
             continue
-        if not _parent_exists(writer, parent_sheet, fk_value, report.created_ids):
+        if not _parent_exists(client, parent_sheet, fk_value, report.created_ids):
             report.add_skip(
                 sheet,
                 row_idx,
@@ -251,15 +251,15 @@ def _process_row(
         return
 
     try:
-        writer.upsert(cfg["collection"], id_bson, cleaned)
+        client.upsert(sheet, id_bson, cleaned)
         report.add_success(sheet, id_value)
     except Exception as exc:  # noqa: BLE001
-        report.add_failure(sheet, row_idx, [f"db_write_error: {exc}"], worksheet)
+        report.add_failure(sheet, row_idx, [f"api_write_error: {exc}"], worksheet)
 
 
 def ingest(
     parsed_workbook: Union[Dict[str, List[Dict[str, Any]]], List[Dict[str, List[Dict[str, Any]]]]],
-    writer: MongoWriter,
+    client: ApiGatewayClient,
 ) -> Dict[str, Any]:
     """
     Ingest synthesized records.
@@ -277,13 +277,13 @@ def ingest(
                 if not rows:
                     continue
                 for idx, row in enumerate(rows, start=2):
-                    _process_row(sheet, row, idx, writer, report)
+                    _process_row(sheet, row, idx, client, report)
     else:
         for sheet in _sheets_in_order():
             rows = parsed_workbook.get(sheet, [])
             if not rows:
                 continue
             for idx, row in enumerate(rows, start=2):
-                _process_row(sheet, row, idx, writer, report)
+                _process_row(sheet, row, idx, client, report)
 
     return report.to_dict()
