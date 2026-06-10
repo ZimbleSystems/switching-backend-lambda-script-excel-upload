@@ -97,10 +97,16 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 | Key                     | Required | Description                                    |
 | ----------------------- | -------- | ---------------------------------------------- |
 | `API_GATEWAY_URL`       | Yes      | e.g. `https://iconn.poc.zimblesystems.click`   |
-| `COGNITO_CLIENT_ID`     | Yes      | App Client ID for M2M authentication           |
-| `COGNITO_CLIENT_SECRET` | Yes      | App Client Secret                              |
-| `COGNITO_TOKEN_URL`     | Yes      | Cognito OAuth2 Token URL                       |
 | `TENANT_ID`             | Yes      | Target tenant ID (e.g. `zimble-tenant`)        |
+| `COGNITO_USER_POOL_ID`  | Yes      | User pool ID for PKCE auth (e.g. `ap-south-1_563GXconM`) |
+| `COGNITO_CLIENT_ID`     | Yes      | App client ID (authorization code + PKCE)      |
+| `COGNITO_REDIRECT_URI`  | Yes      | Registered callback URL (302 intercepted; need not be reachable) |
+| `COGNITO_SCOPES`        | Yes      | e.g. `openid profile adminscope/allaccessscope email` |
+| `COGNITO_USERNAME`      | Yes      | Hosted UI login user                           |
+| `COGNITO_PASSWORD`      | Yes      | Hosted UI login password                       |
+| `COGNITO_REGION`        | No       | AWS region (defaults from user pool id prefix) |
+| `COGNITO_DOMAIN`        | No       | Hosted UI domain; auto-discovered if omitted   |
+| `COGNITO_CLIENT_SECRET` | No       | HTTP Basic on token exchange if client is confidential |
 | `REPORT_BUCKET`         | No       | S3 bucket for ingest JSON reports              |
 | `API_DEBUG_LOG`         | No       | `true` to log each API URL, method, request body, and response (CloudWatch) |
 | `API_DEBUG_LOG_FILE`    | No       | Optional NDJSON file path for the same debug output (e.g. `/tmp/api-debug.log`) |
