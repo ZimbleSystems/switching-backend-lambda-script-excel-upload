@@ -15,10 +15,12 @@ variables:
 
 stages:
   - s3
+  - cognito
   - lambda
   - package
   - deploy
   - destroy_lambda
+  - destroy_cognito_user
   - destroy_s3
 
 provision_s3:
