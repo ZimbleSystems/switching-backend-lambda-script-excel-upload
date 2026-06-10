@@ -16,6 +16,8 @@ import logging
 
 import os
 
+import re
+
 import time
 
 from typing import Any, Dict, Optional
@@ -56,7 +58,11 @@ SHEET_TO_API_PATH = {
 # GET by-id path segment appended after the sheet base path (before {id})
 SHEET_GET_ID_PATH_SEGMENT = {
     "demographic": "demographicId/",
+    "store": "storeId/",
 }
+
+_DELETE_ID_KEYS = ("_id", "id", "documentId", "mongoId", "internalId", "uuid")
+_INTERNAL_ID_PATTERN = re.compile(r"^[a-f0-9]{24,32}$", re.IGNORECASE)
 
 _ALREADY_PRESENT_HINTS = (
     "already present",
@@ -106,6 +112,40 @@ def _extract_upserted_id(
     if sheet_name == "demographic":
         return normalize_demographic_id(id_value)
     return str(id_value)
+
+
+def _lookup_business_id(sheet_name: str, id_value: Any) -> Any:
+    if sheet_name == "demographic":
+        return normalize_demographic_id(id_value)
+    return id_value
+
+
+def _extract_document_delete_id(data: Dict[str, Any], business_id: Any = None) -> Optional[str]:
+    """Internal Mongo/document id for DELETE .../v1/{id} (not the business storeId/demographicId)."""
+    if not isinstance(data, dict):
+        return None
+    business_text = str(business_id).strip() if business_id is not None else None
+
+    for key in _DELETE_ID_KEYS:
+        val = data.get(key)
+        if val is None:
+            continue
+        text = str(val).strip()
+        if not text or (business_text and text == business_text):
+            continue
+        if key == "id" and not _INTERNAL_ID_PATTERN.match(text):
+            continue
+        return text
+
+    for val in data.values():
+        if not isinstance(val, str):
+            continue
+        text = val.strip()
+        if business_text and text == business_text:
+            continue
+        if _INTERNAL_ID_PATTERN.match(text):
+            return text
+    return None
 
 
 
@@ -402,6 +442,70 @@ class ApiGatewayClient:
 
 
 
+    def _fetch_existing(
+        self,
+        sheet_name: str,
+        id_field: str,
+        id_value: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """GET existing record by business id; None if not found."""
+        api_path = SHEET_TO_API_PATH.get(sheet_name, "")
+        lookup_id = _lookup_business_id(sheet_name, id_value)
+        url = self._get_by_id_url(sheet_name, lookup_id)
+        headers = self._get_headers()
+
+        self._log_request(
+            operation="fetch_existing",
+            sheet_name=sheet_name,
+            method="GET",
+            url=url,
+            api_path=api_path,
+            headers=headers,
+            id_field=id_field,
+            id_value=id_value,
+        )
+
+        started = time.time()
+        try:
+            response = self.session.get(url, headers=headers, timeout=10)
+            elapsed_ms = int((time.time() - started) * 1000)
+            self._log_response(
+                operation="fetch_existing",
+                sheet_name=sheet_name,
+                method="GET",
+                url=url,
+                status_code=response.status_code,
+                response_body=response.text,
+                elapsed_ms=elapsed_ms,
+            )
+            if response.status_code == 404:
+                return None
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                except (json.JSONDecodeError, ValueError):
+                    return {}
+                return data if isinstance(data, dict) else {}
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            elapsed_ms = int((time.time() - started) * 1000)
+            _api_debug_log(
+                "api_error",
+                {
+                    "operation": "fetch_existing",
+                    "sheet_name": sheet_name,
+                    "method": "GET",
+                    "url": url,
+                    "elapsed_ms": elapsed_ms,
+                    "error": str(exc),
+                },
+            )
+            logger.error("Error fetching %s (%s): %s", sheet_name, id_value, exc)
+            return None
+        return None
+
+
+
     def exists(self, sheet_name: str, id_field: str, id_value: str) -> bool:
 
         """
@@ -410,113 +514,93 @@ class ApiGatewayClient:
 
         Demographic GET: `/auth/demographic/v1/demographicId/{demographicId}`.
 
-        Other sheets default to `{base_path}{id}` unless configured in SHEET_GET_ID_PATH_SEGMENT.
+        Store GET: `/auth/store/v1/storeId/{storeId}`.
 
         """
 
+        return self._fetch_existing(sheet_name, id_field, id_value) is not None
+
+
+
+    def _delete_resource(
+        self,
+        sheet_name: str,
+        delete_id: str,
+        *,
+        id_field: Optional[str] = None,
+        id_value: Optional[Any] = None,
+    ) -> None:
+        """DELETE `{base_path}{internalDocumentId}`."""
         api_path = SHEET_TO_API_PATH.get(sheet_name, "")
-
-        lookup_id = (
-            normalize_demographic_id(id_value) if sheet_name == "demographic" else id_value
-        )
-
-        url = self._get_by_id_url(sheet_name, lookup_id)
-
+        url = self._put_by_id_url(sheet_name, delete_id)
         headers = self._get_headers()
 
-
-
         self._log_request(
-
-            operation="exists",
-
+            operation="delete",
             sheet_name=sheet_name,
-
-            method="GET",
-
+            method="DELETE",
             url=url,
-
             api_path=api_path,
-
             headers=headers,
-
             id_field=id_field,
-
             id_value=id_value,
-
         )
 
-
-
         started = time.time()
+        response = self.session.delete(url, headers=headers, timeout=15)
+        elapsed_ms = int((time.time() - started) * 1000)
+        self._log_response(
+            operation="delete",
+            sheet_name=sheet_name,
+            method="DELETE",
+            url=url,
+            status_code=response.status_code,
+            response_body=response.text,
+            elapsed_ms=elapsed_ms,
+        )
 
-        try:
+        if response.status_code in (200, 204, 404):
+            return
+        response.raise_for_status()
 
-            response = self.session.get(url, headers=headers, timeout=10)
 
-            elapsed_ms = int((time.time() - started) * 1000)
 
-            self._log_response(
-
-                operation="exists",
-
-                sheet_name=sheet_name,
-
-                method="GET",
-
-                url=url,
-
-                status_code=response.status_code,
-
-                response_body=response.text,
-
-                elapsed_ms=elapsed_ms,
-
+    def replace_if_exists(
+        self,
+        sheet_name: str,
+        id_field: str,
+        document: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        For store / store demographic: GET by business id, DELETE if present, then POST insert.
+        """
+        id_value = document[id_field]
+        existing = self._fetch_existing(sheet_name, id_field, id_value)
+        if existing is not None:
+            delete_id = _extract_document_delete_id(existing, business_id=id_value)
+            if not delete_id:
+                logger.warning(
+                    "No internal delete id in GET %s response for %s=%r; "
+                    "attempting DELETE with business id",
+                    sheet_name,
+                    id_field,
+                    id_value,
+                )
+                delete_id = str(_lookup_business_id(sheet_name, id_value))
+            logger.info(
+                "Replacing existing %s %s=%r via DELETE %s",
+                sheet_name,
+                id_field,
+                id_value,
+                delete_id,
             )
-
-            if response.status_code == 200:
-
-                return True
-
-            if response.status_code == 404:
-
-                return False
-
-            response.raise_for_status()
-
-        except requests.exceptions.RequestException as exc:
-
-            elapsed_ms = int((time.time() - started) * 1000)
-
-            _api_debug_log(
-
-                "api_error",
-
-                {
-
-                    "operation": "exists",
-
-                    "sheet_name": sheet_name,
-
-                    "method": "GET",
-
-                    "url": url,
-
-                    "elapsed_ms": elapsed_ms,
-
-                    "error": str(exc),
-
-                },
-
+            self._delete_resource(
+                sheet_name,
+                delete_id,
+                id_field=id_field,
+                id_value=id_value,
             )
-
-            logger.error("Error checking exists for %s (%s): %s", sheet_name, id_value, exc)
-
-            return False
-
-
-
-        return False
+        return self.upsert(sheet_name, id_field, document)
 
 
 

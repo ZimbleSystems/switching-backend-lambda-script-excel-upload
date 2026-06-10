@@ -26,6 +26,7 @@ Each Excel tab is ingested in order. **Duplicate primary keys** across tabs are 
 - **Chain** `0` and template `chain_id_link` text are treated as “no chain” (no `chain` / chain demographic rows).
 - **Merchant demographic** rows are created only when Excel supplies `merchant_demographics_id` or the Merchant page has real address/contact data.
 - **Store demographics** are written per tab when each tab has its own id (e.g. `DS_101`, `DS_104`).
+- **Store demographic (type S) and store** use replace-before-insert: GET by business id → DELETE by internal document id from the GET response → POST insert.
 - Skips appear in `summary.<sheet>.skipped` and `errors[]` with optional `worksheet` (tab name).
 
 ## API Gateway Endpoints
@@ -33,12 +34,12 @@ Each Excel tab is ingested in order. **Duplicate primary keys** across tabs are 
 
 | Sheet               | API Path                               |
 | ------------------- | -------------------------------------- |
-| demographic         | `/auth/demographic/v1/` — GET by id: `.../demographicId/{id}`; PUT by id: `.../v1/{id}` |
+| demographic         | `/auth/demographic/v1/` — GET `.../demographicId/{id}`; DELETE/PUT `.../v1/{internalId}` |
 | merchant_criteria   | `/config/merchant-criteria/v1/`        |
 | instrument_criteria | `/config/instrument-criteria/v1/`      |
 | chain               | `/auth/chain/v1/`                      |
 | merchant            | `/auth/merchant/v1/`                   |
-| store               | `/auth/store/v1/`                      |
+| store               | `/auth/store/v1/` — GET `.../storeId/{id}`; DELETE `.../v1/{internalId}`; then POST |
 | connector           | `/config/connector-properties/v1/`     |
 | connector_table     | `/auth/connectorTable/v1/`             |
 

@@ -35,6 +35,13 @@ _DEMOGRAPHIC_FK_FIELDS = frozenset({
 })
 
 
+def _should_replace_before_insert(sheet: str, cleaned: Dict[str, Any]) -> bool:
+    """Store and store demographics (type S): delete existing API row then re-insert."""
+    if sheet == "store":
+        return True
+    return sheet == "demographic" and cleaned.get("demographic_type") == "S"
+
+
 def _normalize_demographic_fields(cleaned: Dict[str, Any]) -> None:
     """Lowercase demographic ids so FK refs match API-persisted values."""
     for key in _DEMOGRAPHIC_FK_FIELDS:
@@ -284,8 +291,10 @@ def _process_row(
         normalize_demographic_id(id_value) if sheet == "demographic" else id_value
     )
 
+    write_fn = client.replace_if_exists if _should_replace_before_insert(sheet, cleaned) else client.upsert
+
     try:
-        result = client.upsert(sheet, id_bson, cleaned)
+        result = write_fn(sheet, id_bson, cleaned)
         report.add_success(sheet, result.get("upserted_id", persisted_id))
     except AlreadyPresentError as exc:
         report.add_skip(
