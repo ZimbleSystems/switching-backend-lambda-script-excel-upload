@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from defaults import coerce_int
 from transformers import map_field, strict_transform_blocking_values, transform
 
 
@@ -32,8 +33,38 @@ def _address_lines(raw: Any) -> List[str]:
     return lines
 
 
+def _is_placeholder_table_id(v: Any) -> bool:
+    if _blank(v):
+        return True
+    lower = str(v).strip().lower()
+    return (
+        "to be provided" in lower
+        or "when applicable" in lower
+        or "table id" in lower and "link" in lower
+    )
+
+
+def _is_criteria_list_template(raw: Any) -> bool:
+    """Excel template hints for empty country/state/currency/MCC lists."""
+    if _blank(raw):
+        return True
+    lower = str(raw).strip().lower()
+    if lower in ("na", "n/a", "none", "-"):
+        return True
+    hints = (
+        "list of countries",
+        "list of states",
+        "list of currencies",
+        "list or range of merchant category",
+        "to be either included or excluded",
+    )
+    return any(h in lower for h in hints)
+
+
 def _ie_and_list(raw: Any) -> Tuple[str, List[str]]:
     """Parse 'Include: US,MX' or plain 'US,MX' -> (I|E|N, [codes])."""
+    if _is_criteria_list_template(raw):
+        return "N", []
     if _blank(raw):
         return "N", []
     text = str(raw).strip()
@@ -186,8 +217,8 @@ def build_merchant_tables(page: Dict[str, Any]) -> List[Dict[str, str]]:
         ("CONNECTOR", "connector_table_id"),
     ):
         v = page.get(key)
-        if not _blank(v):
-            out.append({"merchant_table_type": type_, "merchant_table_id": str(v)})
+        if not _is_placeholder_table_id(v):
+            out.append({"merchant_table_type": type_, "merchant_table_id": str(v).strip()})
     return out
 
 
@@ -200,8 +231,8 @@ def build_store_tables(page: Dict[str, Any]) -> List[Dict[str, str]]:
         ("CONNECTOR", "connector_table_id"),
     ):
         v = page.get(key)
-        if not _blank(v):
-            out.append({"store_table_type": type_, "store_table_id": str(v)})
+        if not _is_placeholder_table_id(v):
+            out.append({"store_table_type": type_, "store_table_id": str(v).strip()})
     return out
 
 
@@ -225,11 +256,28 @@ def build_store_chain_list(chain_id: Any, chain_name: str = "NA", status: str = 
     }]
 
 
+def _build_transaction_limit(page: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """API shape: transaction_limit[{limit_type, limit_amount, limit_number}]."""
+    if _blank(page.get("tx_limit_type")):
+        return []
+    limit_code = map_field("tx_limit_type", page.get("tx_limit_type"))
+    if not limit_code:
+        return []
+    entry: Dict[str, Any] = {"limit_type": str(limit_code)}
+    amt = coerce_int(page.get("tx_amount"))
+    if amt is not None:
+        entry["limit_amount"] = amt
+    nbr = coerce_int(page.get("tx_limit"))
+    if nbr is not None:
+        entry["limit_number"] = nbr
+    return [entry]
+
+
 def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     ie_c, countries = _ie_and_list(page.get("countries_list"))
     ie_s, states = _ie_and_list(page.get("states_list"))
     ie_cur, currencies = _ie_and_list(page.get("currencies_list"))
-    ie_mcc, _mcc_vals = _ie_and_list(page.get("mcc_list"))
+    ie_mcc, mcc_vals = _ie_and_list(page.get("mcc_list"))
 
     purchase = _blocking_pair(
         page.get("purchase_international_type"),
@@ -247,39 +295,34 @@ def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
         value_field="limit_type",
     )
 
-    tx_map = {}
-    if not _blank(page.get("tx_limit_type")):
-        limit_code = map_field("tx_limit_type", page.get("tx_limit_type"))
-        if limit_code:
-            tx_map[str(limit_code)] = {
-                "limit_type": _s(limit_code),
-                "transaction_amt": page.get("tx_amount"),
-                "transaction_nbr": page.get("tx_limit"),
-            }
+    purchase_types = [purchase] if purchase else []
+    entry_types = [entry] if entry else []
+    limit_types = [limit] if limit else []
 
     out = {
-        "ie_blocked_countries": ie_c,
-        "blocked_countries": countries,
-        "ie_block_states": ie_s,
-        "blocked_states": states,
-        "ie_blocked_currency": ie_cur,
-        "blocked_currencies": currencies,
-        "ie_block_mcc": ie_mcc,
-        "ie_block_purchase_type": purchase["international"] if purchase else "N",
-        "blocked_purchase_types": [purchase] if purchase else [],
-        "ie_block_entry_type": entry["international"] if entry else "N",
-        "blocked_entry_types": [entry] if entry else [],
-        "ie_block_limit_type": limit["international"] if limit else "N",
-        "block_limit_types": [limit] if limit else [],
-        "ie_block_transaction_type": "N",
-        "blocked_transaction_types": [],
-        "ie_block_terminal_type": "N",
-        "blocked_terminal_types": [],
-        "transaction_limits_map": tx_map,
+        "ie_countries": ie_c,
+        "countries": countries,
+        "ie_states": ie_s,
+        "states": states,
+        "ie_currency": ie_cur,
+        "currencies": currencies,
+        "ie_mcc": ie_mcc,
+        "mcc": mcc_vals,
+        "ie_purchase_type": purchase["international"] if purchase else "N",
+        "purchase_types": purchase_types,
+        "ie_entry_type": entry["international"] if entry else "N",
+        "entry_types": entry_types,
+        "ie_limit_type": limit["international"] if limit else "N",
+        "limit_types": limit_types,
+        "ie_transaction_type": "N",
+        "transaction_types": [],
+        "ie_terminal_type": "N",
+        "terminal_types": [],
+        "transaction_limit": _build_transaction_limit(page),
     }
-    strict_transform_blocking_values(out.get("blocked_purchase_types") or [], "purchase_type")
-    strict_transform_blocking_values(out.get("blocked_entry_types") or [], "entry_type")
-    strict_transform_blocking_values(out.get("block_limit_types") or [], "limit_type")
+    strict_transform_blocking_values(out.get("purchase_types") or [], "purchase_type")
+    strict_transform_blocking_values(out.get("entry_types") or [], "entry_type")
+    strict_transform_blocking_values(out.get("limit_types") or [], "limit_type")
     return out
 
 

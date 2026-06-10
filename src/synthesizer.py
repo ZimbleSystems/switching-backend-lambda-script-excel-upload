@@ -335,9 +335,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             rec["_no_merchant_demographic"] = True
             if _is_blank(rec.get("merchant_demographics_id")):
                 rec["merchant_demographics_id"] = auto_id("dm")
-        tables = build_merchant_tables(merchant_pg)
-        if tables:
-            rec["merchant_tables"] = tables
+        rec["merchant_tables"] = build_merchant_tables(merchant_pg)
         chains = build_merchant_chain_list(chain_id, chain_name="NA", status=chain_status or "A")
         if chains:
             rec["merchant_chain_list"] = chains
