@@ -55,12 +55,6 @@ SHEET_TO_API_PATH = {
 
 }
 
-# GET by-id path segment appended after the sheet base path (before {id})
-SHEET_GET_ID_PATH_SEGMENT = {
-    "demographic": "demographicId/",
-    "store": "storeId/",
-}
-
 _DELETE_ID_KEYS = ("_id", "id", "documentId", "mongoId", "internalId", "uuid")
 _INTERNAL_ID_PATTERN = re.compile(r"^[a-f0-9]{24,32}$", re.IGNORECASE)
 
@@ -318,21 +312,25 @@ class ApiGatewayClient:
 
 
 
-    def _get_by_id_url(self, sheet_name: str, id_value: Any) -> str:
+    def _resource_by_id_url(self, sheet_name: str, id_value: Any) -> str:
+
+        """GET, PUT, and DELETE by id: `{base_path}{id}`."""
 
         endpoint = self._get_endpoint(sheet_name)
 
-        segment = SHEET_GET_ID_PATH_SEGMENT.get(sheet_name, "")
+        return f"{endpoint}{id_value}"
 
-        return f"{endpoint}{segment}{id_value}"
+
+
+    def _get_by_id_url(self, sheet_name: str, id_value: Any) -> str:
+
+        return self._resource_by_id_url(sheet_name, id_value)
 
 
 
     def _put_by_id_url(self, sheet_name: str, id_value: Any) -> str:
 
-        endpoint = self._get_endpoint(sheet_name)
-
-        return f"{endpoint}{id_value}"
+        return self._resource_by_id_url(sheet_name, id_value)
 
 
 
@@ -510,11 +508,7 @@ class ApiGatewayClient:
 
         """
 
-        Check if a record exists.
-
-        Demographic GET: `/auth/demographic/v1/demographicId/{demographicId}`.
-
-        Store GET: `/auth/store/v1/storeId/{storeId}`.
+        Check if a record exists via GET `{base_path}{id}`.
 
         """
 
