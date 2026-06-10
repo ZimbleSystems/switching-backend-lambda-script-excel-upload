@@ -108,6 +108,7 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 | `COGNITO_DOMAIN`        | No       | Hosted UI domain; auto-discovered if omitted   |
 | `COGNITO_CLIENT_SECRET` | No       | HTTP Basic on token exchange if client is confidential |
 | `REPORT_BUCKET`         | No       | S3 bucket for ingest JSON reports              |
+| `API_REQUEST_TIMEOUT`   | No       | HTTP read timeout in seconds for API calls (default `60`; use higher if Knative cold starts are slow) |
 | `API_DEBUG_LOG`         | No       | `true` to log each API URL, method, request body, and response (CloudWatch) |
 | `API_DEBUG_LOG_FILE`    | No       | Optional NDJSON file path for the same debug output (e.g. `/tmp/api-debug.log`) |
 

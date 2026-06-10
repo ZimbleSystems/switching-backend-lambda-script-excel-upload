@@ -144,6 +144,18 @@ def _extract_document_delete_id(data: Dict[str, Any], business_id: Any = None) -
 
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
+_DEFAULT_API_TIMEOUT_SEC = 90
+
+
+def _api_request_timeout() -> float:
+    """HTTP timeout for API Gateway calls (Knative cold starts may need >15s)."""
+    raw = os.environ.get("API_REQUEST_TIMEOUT", "").strip()
+    if raw:
+        try:
+            return max(float(raw), 5.0)
+        except ValueError:
+            logger.warning("Invalid API_REQUEST_TIMEOUT=%r; using default %s", raw, _DEFAULT_API_TIMEOUT_SEC)
+    return float(_DEFAULT_API_TIMEOUT_SEC)
 
 
 
@@ -465,7 +477,7 @@ class ApiGatewayClient:
 
         started = time.time()
         try:
-            response = self.session.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, headers=headers, timeout=_api_request_timeout())
             elapsed_ms = int((time.time() - started) * 1000)
             self._log_response(
                 operation="fetch_existing",
@@ -541,7 +553,7 @@ class ApiGatewayClient:
         )
 
         started = time.time()
-        response = self.session.delete(url, headers=headers, timeout=15)
+        response = self.session.delete(url, headers=headers, timeout=_api_request_timeout())
         elapsed_ms = int((time.time() - started) * 1000)
         self._log_response(
             operation="delete",
@@ -678,7 +690,7 @@ class ApiGatewayClient:
 
                 json=document_payload,
 
-                timeout=15,
+                timeout=_api_request_timeout(),
 
             )
 
@@ -740,7 +752,7 @@ class ApiGatewayClient:
 
                     json=document_payload,
 
-                    timeout=15,
+                    timeout=_api_request_timeout(),
 
                 )
 

@@ -15,6 +15,7 @@ Required environment variables:
 
 Optional environment variables:
     REPORT_BUCKET             if set, the run report is written to this S3 bucket
+    API_REQUEST_TIMEOUT       optional HTTP timeout seconds for API calls (default 60)
     API_DEBUG_LOG             set to true to log each API request/response (CloudWatch)
     API_DEBUG_LOG_FILE        optional path for NDJSON debug file (e.g. /tmp/api-debug.log)
 """
