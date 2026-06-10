@@ -326,6 +326,30 @@ def build_merchant_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _is_instrument_template_hint(v: Any) -> bool:
+    if _blank(v):
+        return True
+    lower = str(v).strip().lower()
+    hints = (
+        "suspension control",
+        "channel (",
+        "response code (",
+        "number of declines",
+        "tracking duration",
+        "suspension type",
+        "suspension duration",
+        "when applicable",
+    )
+    return any(h in lower for h in hints)
+
+
+def _has_suspension_control(page: Dict[str, Any]) -> bool:
+    channel = page.get("susp_channel")
+    if _is_instrument_template_hint(channel):
+        return False
+    return not _blank(channel)
+
+
 def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
     timed = []
     if not _blank(page.get("timed_limit_type")):
@@ -343,8 +367,8 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
             "transaction_amt": page.get("daily_tx_amount"),
             "transaction_count": page.get("daily_tx_count"),
         })
-    susp = []
-    if not _blank(page.get("susp_channel")) or not _blank(page.get("susp_no_declines")):
+    susp: List[Dict[str, Any]] = []
+    if _has_suspension_control(page):
         susp.append({
             "channel": _s(page.get("susp_channel")),
             "response_code": _s(page.get("susp_response_code")),
@@ -357,13 +381,11 @@ def build_instrument_criteria_extras(page: Dict[str, Any]) -> Dict[str, Any]:
             "susp_duration": page.get("susp_duration"),
             "susp_timeunit": map_field("susp_time_unit", page.get("susp_time_unit")),
         })
-    out: Dict[str, Any] = {}
+    out: Dict[str, Any] = {"susp_criterias": susp}
     if timed:
         out["timed_transaction_limits"] = timed
     if daily:
         out["transaction_limits"] = daily
-    if susp:
-        out["susp_criterias"] = susp
     if not _blank(page.get("check_for_expiry")):
         out["check_expiry"] = map_field("check_for_expiry", page.get("check_for_expiry"))
     if not _blank(page.get("validate_instrument")):

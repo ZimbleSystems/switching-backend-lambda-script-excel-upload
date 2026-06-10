@@ -169,7 +169,7 @@ MERCHANT_SCHEMA = {
         "bson": "merchant_governing_state", "required": True, "type": "str",
     },
     "merchant_demographics_id": {
-        "bson": "merchant_demographics_id", "required": True, "type": "str",
+        "bson": "merchant_demographics_id", "required": False, "type": "str",
     },
     "criteria": {"bson": "criteria", "required": False, "type": "int"},
     "instrument_criteria": {"bson": "instrument_criteria", "required": False, "type": "int"},

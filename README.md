@@ -97,7 +97,6 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 | Key                     | Required | Description                                    |
 | ----------------------- | -------- | ---------------------------------------------- |
 | `API_GATEWAY_URL`       | Yes      | e.g. `https://iconn.poc.zimblesystems.click`   |
-| `TENANT_ID`             | Yes      | Target tenant ID (e.g. `zimble-tenant`)        |
 | `COGNITO_USER_POOL_ID`  | Yes      | User pool ID for PKCE auth (e.g. `ap-south-1_563GXconM`) |
 | `COGNITO_CLIENT_ID`     | Yes      | App client ID (authorization code + PKCE)      |
 | `COGNITO_REDIRECT_URI`  | Yes      | Registered callback URL (302 intercepted; need not be reachable) |

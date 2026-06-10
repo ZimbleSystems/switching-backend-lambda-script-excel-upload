@@ -182,6 +182,9 @@ def _process_row(
 
     cleaned = _build_cleaned_document(row, cfg, cleaned)
 
+    if sheet == "merchant" and row.get("_no_merchant_demographic"):
+        cleaned.pop("merchant_demographics_id", None)
+
     cascade_reason = _cascade_skip_demographic(row, report.created_ids) if sheet == "demographic" else None
     if cascade_reason:
         report.add_skip(sheet, row_idx, cascade_reason, worksheet)

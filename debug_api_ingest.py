@@ -1,6 +1,6 @@
 """
 Local debug runner: synthesize first worksheet tab and attempt one API upsert per entity type.
-Requires API_GATEWAY_URL, COGNITO_*, TENANT_ID env vars (same as Lambda).
+Requires API_GATEWAY_URL and COGNITO PKCE env vars (same as Lambda).
 Optional: API_DEBUG_LOG=true and API_DEBUG_LOG_FILE=api-debug.log for full request/response logs.
 
 Usage (from project root):

@@ -158,15 +158,9 @@ class ApiGatewayClient:
 
         api_gateway_url: Optional[str] = None,
 
-        tenant_id: Optional[str] = None,
-
     ):
 
         self.api_gateway_url = (api_gateway_url or os.environ.get("API_GATEWAY_URL", "")).rstrip("/")
-
-        self.tenant_id = tenant_id or os.environ.get("TENANT_ID", "default-tenant")
-
-
 
         self.session = requests.Session()
         self._auth_session = requests.Session()
@@ -212,8 +206,6 @@ class ApiGatewayClient:
             "Content-Type": "application/json",
 
             "Accept": "application/json",
-
-            "X-Tenant-Id": self.tenant_id,
 
         }
 
@@ -278,8 +270,6 @@ class ApiGatewayClient:
                 "id_field": id_field,
 
                 "id_value": str(id_value) if id_value is not None else None,
-
-                "tenant_id": self.tenant_id,
 
                 "headers": _redact_headers(headers),
 
@@ -494,12 +484,6 @@ class ApiGatewayClient:
 
 
         document_payload = {**document}
-
-        if "tenantId" not in document_payload:
-
-            document_payload["tenantId"] = self.tenant_id
-
-
 
         try:
 

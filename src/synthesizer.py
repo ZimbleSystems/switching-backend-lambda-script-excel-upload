@@ -318,23 +318,25 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             merchant_pg["merchant_governing_state"] = "NA"
         ttype, tid = _first_table_fk(merchant_pg)
         chain_id = _effective_chain_link(merchant_pg)
-        merchant_demo_id = _str_or_none(merchant_pg.get("merchant_demographics_id"))
-        rec = transform_all({
+        has_merchant_demo = _should_synthesize_merchant_demographic(merchant_pg)
+        merchant_fields: Dict[str, Any] = {
             "merchant_id": _str_or_none(merchant_pg.get("merchant_id")),
             "merchant_org": merchant_pg.get("merchant_org"),
             "merchant_name": merchant_pg.get("merchant_name"),
             "merchant_status": merchant_pg.get("merchant_status"),
             "merchant_governing_state": merchant_pg.get("merchant_governing_state"),
-            "merchant_demographics_id": merchant_demo_id,
             "merchant_chain_id": chain_id,
             "merchant_table_type": ttype,
             "merchant_table_id": tid,
             "time_zone": _s(merchant_pg.get("merchant_time_zone")),
-        })
-        if not _should_synthesize_merchant_demographic(merchant_pg):
+        }
+        if has_merchant_demo:
+            merchant_fields["merchant_demographics_id"] = _str_or_none(
+                merchant_pg.get("merchant_demographics_id")
+            )
+        rec = transform_all(merchant_fields)
+        if not has_merchant_demo:
             rec["_no_merchant_demographic"] = True
-            if _is_blank(rec.get("merchant_demographics_id")):
-                rec["merchant_demographics_id"] = auto_id("dm")
         rec["merchant_tables"] = build_merchant_tables(merchant_pg)
         chains = build_merchant_chain_list(chain_id, chain_name="NA", status=chain_status or "A")
         if chains:

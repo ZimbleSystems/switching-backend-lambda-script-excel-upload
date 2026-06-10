@@ -5,7 +5,6 @@ Trigger: S3 ObjectCreated event for an Excel file.
 
 Required environment variables:
     API_GATEWAY_URL           e.g. https://iconn.poc.zimblesystems.click
-    TENANT_ID
     COGNITO_USER_POOL_ID      e.g. ap-south-1_563GXconM
     COGNITO_CLIENT_ID
     COGNITO_REDIRECT_URI      registered callback URL (intercepted, need not be reachable)
