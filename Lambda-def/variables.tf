@@ -82,3 +82,53 @@ variable "report_bucket" {
   type        = string
   description = "The unique name for the S3 bucket serving as the analytics report target."
 }
+
+# variable "user_pool_id" {
+#   type        = string
+#   description = "The ID of the Cognito User Pool to authenticate with."
+# }
+
+variable "user_pool_name" {
+  type        = string
+  description = "The name of the Cognito User Pool to authenticate with."
+}
+
+variable "app_client_name" {
+  type        = string
+  description = "The name of the Cognito User Pool App Client to authenticate with."
+}
+
+variable "api_gateway_url" {
+  type        = string
+  description = "The URL of the API Gateway endpoint to invoke after processing."
+}
+
+variable "tenant_id" {
+  type        = string
+  description = "The tenant identifier to include in API Gateway invocations."
+}
+
+# variable "app_client_secret" {
+#   type        = string
+#   description = "The client secret associated with the specified Cognito User Pool App Client."
+# }
+
+variable "cognito_scopes" {
+  type        = string
+  description = "The list of OAuth 2.0 scopes to request during Cognito authentication."
+}
+
+variable "cognito_redirect_uri" {
+  type        = string
+  description = "The redirect URI configured in the Cognito User Pool App Client settings."
+}
+
+variable "api_debug_log" {
+  type        = string
+  description = "A flag to enable or disable debug logging in the Lambda function (e.g., 'true' or 'false')."
+}
+
+variable "cognito_secret_name" {
+  type        = string
+  description = "Secrets Manager secret containing Cognito credentials"
+}

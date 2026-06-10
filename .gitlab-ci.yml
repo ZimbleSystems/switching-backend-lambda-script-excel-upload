@@ -36,6 +36,21 @@ provision_s3:
        - s3_creation/**/*
        - .gitlab-ci.yml
 
+provision_cognito_user:
+  stage: cognito
+  needs: []
+  script:
+    - echo "Provisioning Cognito User Pool and Test User for Lambda authentication..."
+    - cd cognito-user
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=cognito-user/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform plan 
+    - terraform apply -auto-approve
+  rules:   
+   - if: '$CI_COMMIT_BRANCH == "main"'
+     changes:
+       - cognito-user/**/*
+       - .gitlab-ci.yml
+
 provision_lambda:
   stage: lambda
   needs: []
@@ -139,5 +154,19 @@ destroy_s3:
     - if: '$CI_COMMIT_BRANCH == "main"' 
       changes:
         - s3_creation/**/*
+        - .gitlab-ci.yml
+      when: manual
+
+destroy_cognito_user:
+  stage: destroy_cognito_user
+  script:
+    - echo "Destroying Cognito User Pool and Test User for Lambda authentication..."
+    - cd cognito-user
+    - terraform init -reconfigure -backend-config="bucket=publiccentralsouthtestbucket" -backend-config="key=cognito-user/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+    - terraform destroy -auto-approve
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"' 
+      changes:
+        - cognito-user/**/*
         - .gitlab-ci.yml
       when: manual
