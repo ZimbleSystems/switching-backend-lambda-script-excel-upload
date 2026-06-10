@@ -102,6 +102,8 @@ On Windows Git Bash, use `cygpath` or run `local-dev/build_zip.sh` from a local 
 | `COGNITO_TOKEN_URL`     | Yes      | Cognito OAuth2 Token URL                       |
 | `TENANT_ID`             | Yes      | Target tenant ID (e.g. `zimble-tenant`)        |
 | `REPORT_BUCKET`         | No       | S3 bucket for ingest JSON reports              |
+| `API_DEBUG_LOG`         | No       | `true` to log each API URL, method, request body, and response (CloudWatch) |
+| `API_DEBUG_LOG_FILE`    | No       | Optional NDJSON file path for the same debug output (e.g. `/tmp/api-debug.log`) |
 
 
 ### S3 trigger

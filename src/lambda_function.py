@@ -12,6 +12,8 @@ Required environment variables:
 
 Optional environment variables:
     REPORT_BUCKET             if set, the run report is written to this S3 bucket
+    API_DEBUG_LOG             set to true to log each API request/response (CloudWatch)
+    API_DEBUG_LOG_FILE        optional path for NDJSON debug file (e.g. /tmp/api-debug.log)
 """
 from __future__ import annotations
 
