@@ -227,6 +227,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
     chain_status = transform_all({"chain_status": chain_pg.get("chain_status")}).get("chain_status", "A")
     merchant_crit_id = _resolve_merchant_criteria_id(merchant_pg, store_pg, mcrit_pg)
     instrument_crit_id = _optional_criteria_id(
+        icrit_pg.get("criteria_id"),
         icrit_pg.get("criteria"),
         merchant_pg.get("instrument_criteria_table_id"),
         store_pg.get("instrument_criteria_table_id"),

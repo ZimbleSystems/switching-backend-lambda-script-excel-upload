@@ -52,6 +52,32 @@ SHEET_TO_API_PATH = {
 
 }
 
+# GET by-id path segment appended after the sheet base path (before {id})
+SHEET_GET_ID_PATH_SEGMENT = {
+    "demographic": "demographicId/",
+}
+
+_ALREADY_PRESENT_HINTS = (
+    "already present",
+    "cannot add",
+    "already exists",
+)
+
+
+class AlreadyPresentError(Exception):
+    """Raised when the API reports the record already exists (treat as skip, not failure)."""
+
+    def __init__(self, sheet_name: str, id_value: Any, response_body: str) -> None:
+        self.sheet_name = sheet_name
+        self.id_value = id_value
+        self.response_body = response_body
+        super().__init__(response_body)
+
+
+def _is_already_present_message(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(hint in lower for hint in _ALREADY_PRESENT_HINTS)
+
 
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
@@ -223,6 +249,24 @@ class ApiGatewayClient:
 
 
 
+    def _get_by_id_url(self, sheet_name: str, id_value: Any) -> str:
+
+        endpoint = self._get_endpoint(sheet_name)
+
+        segment = SHEET_GET_ID_PATH_SEGMENT.get(sheet_name, "")
+
+        return f"{endpoint}{segment}{id_value}"
+
+
+
+    def _put_by_id_url(self, sheet_name: str, id_value: Any) -> str:
+
+        endpoint = self._get_endpoint(sheet_name)
+
+        return f"{endpoint}{id_value}"
+
+
+
     def _log_request(
 
         self,
@@ -335,15 +379,15 @@ class ApiGatewayClient:
 
         Check if a record exists.
 
-        Expects downstream APIs to support `GET /v1/{id}`.
+        Demographic GET: `/auth/demographic/v1/demographicId/{demographicId}`.
+
+        Other sheets default to `{base_path}{id}` unless configured in SHEET_GET_ID_PATH_SEGMENT.
 
         """
 
         api_path = SHEET_TO_API_PATH.get(sheet_name, "")
 
-        endpoint = self._get_endpoint(sheet_name)
-
-        url = f"{endpoint}{id_value}"
+        url = self._get_by_id_url(sheet_name, id_value)
 
         headers = self._get_headers()
 
@@ -551,7 +595,7 @@ class ApiGatewayClient:
 
             if response.status_code == 405:
 
-                url = f"{endpoint}{id_value}"
+                url = self._put_by_id_url(sheet_name, id_value)
 
                 self._log_request(
 
@@ -653,9 +697,15 @@ class ApiGatewayClient:
 
             )
 
+            response_body = exc.response.text if exc.response is not None else ""
+
+            if _is_already_present_message(response_body):
+
+                raise AlreadyPresentError(sheet_name, id_value, response_body) from exc
+
             raise ValueError(
 
-                f"API HTTP Error while writing to {sheet_name}: {exc.response.text}"
+                f"API HTTP Error while writing to {sheet_name}: {response_body}"
 
             ) from exc
 

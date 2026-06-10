@@ -57,7 +57,7 @@ MERCHANT_CRITERIA_SCHEMA = {
 # instrument-criteria-service -> collection: instrument-criteria
 # ---------------------------------------------------------------------------
 INSTRUMENT_CRITERIA_SCHEMA = {
-    "criteria_id": {"bson": "criteria", "required": False, "type": "int"},
+    "criteria_id": {"bson": "criteria_id", "required": False, "type": "int"},
     "description": {
         "bson": "description", "required": True, "type": "str",
         "min": 1, "max": 200,

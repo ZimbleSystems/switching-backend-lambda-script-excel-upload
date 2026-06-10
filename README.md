@@ -33,7 +33,7 @@ Each Excel tab is ingested in order. **Duplicate primary keys** across tabs are 
 
 | Sheet               | API Path                               |
 | ------------------- | -------------------------------------- |
-| demographic         | `/auth/demographic/v1/`                |
+| demographic         | `/auth/demographic/v1/` — GET by id: `.../demographicId/{id}`; PUT by id: `.../v1/{id}` |
 | merchant_criteria   | `/config/merchant-criteria/v1/`        |
 | instrument_criteria | `/config/instrument-criteria/v1/`      |
 | chain               | `/auth/chain/v1/`                      |

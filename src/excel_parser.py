@@ -194,7 +194,7 @@ MERCHANT_CRITERIA_SEQUENCE: List[str] = [
 ]
 
 INSTRUMENT_CRITERIA_SEQUENCE: List[str] = [
-    "criteria",                     # 1  Criteria ID
+    "criteria_id",                  # 1  Criteria ID
     "description",                  # 2  Criteria Description
     "timed_limit_type",             # 3  Limit Type (Timed Transaction Limit)
     "timed_tx_amount",              # 4  Transaction Amount (Timed Transaction Limit)

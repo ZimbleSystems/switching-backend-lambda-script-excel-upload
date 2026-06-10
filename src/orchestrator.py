@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set, Union
 
-from api_client import ApiGatewayClient
+from api_client import AlreadyPresentError, ApiGatewayClient
 from schemas import SHEETS
 from defaults import coerce_int, fill_missing_required
 from validators import validate_row
@@ -90,10 +90,14 @@ class IngestReport:
         row_idx: int,
         reason: str,
         worksheet: str | None = None,
+        *,
+        register_id: Any = None,
     ) -> None:
         self.summary.setdefault(sheet, {"success": 0, "failed": 0, "skipped": 0})
         self.summary[sheet]["skipped"] += 1
         self.errors.append(self._error_entry(sheet, row_idx, [reason], worksheet))
+        if register_id is not None:
+            self.created_ids.setdefault(sheet, set()).add(str(register_id))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -256,6 +260,14 @@ def _process_row(
     try:
         client.upsert(sheet, id_bson, cleaned)
         report.add_success(sheet, id_value)
+    except AlreadyPresentError as exc:
+        report.add_skip(
+            sheet,
+            row_idx,
+            f"{cfg['id_field']}={id_value!r} already present in API — skipped",
+            worksheet,
+            register_id=id_value,
+        )
     except Exception as exc:  # noqa: BLE001
         report.add_failure(sheet, row_idx, [f"api_write_error: {exc}"], worksheet)
 
