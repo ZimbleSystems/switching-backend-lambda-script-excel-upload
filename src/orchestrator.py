@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Set, Union
 
 from api_client import AlreadyPresentError, ApiGatewayClient
 from schemas import SHEETS
-from defaults import coerce_int, fill_missing_required
+from defaults import coerce_int, fill_missing_required, normalize_demographic_id
 from validators import validate_row
 
 _INGEST_META_KEYS = frozenset({
@@ -26,6 +26,24 @@ _INGEST_META_KEYS = frozenset({
     "_linked_chain_id",
     "_no_merchant_demographic",
 })
+
+_DEMOGRAPHIC_FK_FIELDS = frozenset({
+    "demographic_id",
+    "store_demographics_id",
+    "merchant_demographics_id",
+    "chain_demographics_id",
+})
+
+
+def _normalize_demographic_fields(cleaned: Dict[str, Any]) -> None:
+    """Lowercase demographic ids so FK refs match API-persisted values."""
+    for key in _DEMOGRAPHIC_FK_FIELDS:
+        if key not in cleaned:
+            continue
+        value = cleaned[key]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        cleaned[key] = normalize_demographic_id(value)
 
 
 def _normalize_criteria_fields(cleaned: Dict[str, Any]) -> None:
@@ -114,6 +132,8 @@ def _parent_exists(
     created_ids: Dict[str, Set[str]],
 ) -> bool:
     parent_cfg = SHEETS[parent_sheet]
+    if parent_sheet == "demographic":
+        parent_id_value = normalize_demographic_id(parent_id_value)
     if str(parent_id_value) in created_ids.get(parent_sheet, set()):
         return True
     parent_id_field_bson = parent_cfg["schema"][parent_cfg["id_field"]]["bson"]
@@ -185,6 +205,7 @@ def _process_row(
         return
 
     cleaned = _build_cleaned_document(row, cfg, cleaned)
+    _normalize_demographic_fields(cleaned)
 
     if sheet == "merchant" and row.get("_no_merchant_demographic"):
         cleaned.pop("merchant_demographics_id", None)
@@ -199,6 +220,8 @@ def _process_row(
         if fk_col == "merchant_demographics_id" and row.get("_no_merchant_demographic"):
             continue
         fk_value = row.get(fk_col)
+        if fk_col in _DEMOGRAPHIC_FK_FIELDS and fk_value is not None:
+            fk_value = normalize_demographic_id(fk_value)
         if fk_value is None or (isinstance(fk_value, str) and fk_value.strip() == ""):
             if cfg["schema"].get(fk_col, {}).get("required"):
                 report.add_failure(
@@ -257,16 +280,20 @@ def _process_row(
         )
         return
 
+    persisted_id = (
+        normalize_demographic_id(id_value) if sheet == "demographic" else id_value
+    )
+
     try:
-        client.upsert(sheet, id_bson, cleaned)
-        report.add_success(sheet, id_value)
+        result = client.upsert(sheet, id_bson, cleaned)
+        report.add_success(sheet, result.get("upserted_id", persisted_id))
     except AlreadyPresentError as exc:
         report.add_skip(
             sheet,
             row_idx,
-            f"{cfg['id_field']}={id_value!r} already present in API — skipped",
+            f"{cfg['id_field']}={persisted_id!r} already present in API — skipped",
             worksheet,
-            register_id=id_value,
+            register_id=persisted_id,
         )
     except Exception as exc:  # noqa: BLE001
         report.add_failure(sheet, row_idx, [f"api_write_error: {exc}"], worksheet)

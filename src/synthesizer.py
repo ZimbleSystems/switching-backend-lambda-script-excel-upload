@@ -17,7 +17,7 @@ from nested_builders import (
     build_store_chain_list,
     build_store_tables,
 )
-from defaults import auto_id, coerce_int, fill_missing_required
+from defaults import auto_id, coerce_int, fill_missing_required, normalize_demographic_id
 from schemas import SHEETS
 from transformers import strict_transform_demographic, transform_all, transform_workbook_pages
 
@@ -112,7 +112,9 @@ def _first_table_fk(page: Dict[str, Any]) -> tuple:
 def _ensure_demographic_id(page: Dict[str, Any], key: str, prefix: str) -> str:
     if _is_blank(page.get(key)):
         page[key] = auto_id(prefix)
-    return str(page[key]).strip()
+    normalized = normalize_demographic_id(page[key])
+    page[key] = normalized
+    return normalized
 
 
 def _page_has_entity(page: Dict[str, Any], anchor_key: str) -> bool:
@@ -181,7 +183,7 @@ def _stamp_bundle_metadata(
 
 def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_type: str) -> Dict[str, Any]:
     rec: Dict[str, Any] = {
-        "demographic_id": _str_or_none(demographic_id),
+        "demographic_id": _str_or_none(normalize_demographic_id(demographic_id)),
         "demographic_type": demographic_type,
     }
     addresses = build_address(page)
@@ -304,7 +306,9 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             "chain_status": chain_pg.get("chain_status") or "A",
             "chain_governing_state": chain_pg.get("chain_governing_state"),
             "chain_demographics_id": (
-                None if _is_placeholder_text(chain_demo_id) else _str_or_none(chain_demo_id)
+                None
+                if _is_placeholder_text(chain_demo_id)
+                else _str_or_none(normalize_demographic_id(chain_demo_id))
             ),
         })
         fill_missing_required(rec, SHEETS["chain"]["schema"])
@@ -333,7 +337,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         }
         if has_merchant_demo:
             merchant_fields["merchant_demographics_id"] = _str_or_none(
-                merchant_pg.get("merchant_demographics_id")
+                normalize_demographic_id(merchant_pg.get("merchant_demographics_id"))
             )
         rec = transform_all(merchant_fields)
         if not has_merchant_demo:
@@ -373,7 +377,9 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             "store_status": store_pg.get("store_status"),
             "store_governing_state": store_pg.get("store_governing_state"),
             "store_merchant_id": _str_or_none(store_pg.get("store_merchant_id")),
-            "store_demographics_id": _str_or_none(store_pg.get("store_demographics_id")),
+            "store_demographics_id": _str_or_none(
+                normalize_demographic_id(store_pg.get("store_demographics_id"))
+            ),
             "store_chain_id": chain_id,
             "store_table_type": ttype,
             "store_table_id": tid,

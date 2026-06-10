@@ -25,6 +25,7 @@ from typing import Any, Dict, Optional
 import requests
 
 from cognito_pkce_auth import fetch_access_token_pkce
+from defaults import normalize_demographic_id
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,34 @@ class AlreadyPresentError(Exception):
 def _is_already_present_message(text: str) -> bool:
     lower = (text or "").lower()
     return any(hint in lower for hint in _ALREADY_PRESENT_HINTS)
+
+
+def _extract_upserted_id(
+    sheet_name: str,
+    id_field: str,
+    id_value: Any,
+    response: requests.Response,
+) -> str:
+    """Prefer API-returned id (e.g. demographic lowercased) over request value."""
+    try:
+        data = response.json()
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    if sheet_name == "demographic":
+        returned = data.get("demographic_id") or data.get(id_field)
+        if returned:
+            return normalize_demographic_id(returned)
+
+    for key in (id_field, "id"):
+        if data.get(key) is not None:
+            return str(data[key])
+
+    if sheet_name == "demographic":
+        return normalize_demographic_id(id_value)
+    return str(id_value)
 
 
 
@@ -387,7 +416,11 @@ class ApiGatewayClient:
 
         api_path = SHEET_TO_API_PATH.get(sheet_name, "")
 
-        url = self._get_by_id_url(sheet_name, id_value)
+        lookup_id = (
+            normalize_demographic_id(id_value) if sheet_name == "demographic" else id_value
+        )
+
+        url = self._get_by_id_url(sheet_name, lookup_id)
 
         headers = self._get_headers()
 
@@ -659,13 +692,15 @@ class ApiGatewayClient:
 
 
 
+            upserted_id = _extract_upserted_id(sheet_name, id_field, id_value, response)
+
             return {
 
                 "matched": 1,
 
                 "modified": 1,
 
-                "upserted_id": str(id_value),
+                "upserted_id": upserted_id,
 
                 "api_status_code": response.status_code,
 

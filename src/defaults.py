@@ -10,6 +10,13 @@ def auto_id(prefix: str = "auto") -> str:
     return f"{prefix}{uuid.uuid4().hex[:12]}".lower()
 
 
+def normalize_demographic_id(value: Any) -> str:
+    """Demographic API persists ids lowercased; align Excel FK refs and lookups."""
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
 def auto_criteria_id() -> int:
     """Numeric criteria id (MerchantCriteria / InstrumentCriteria use Integer)."""
     return (uuid.uuid4().int % 899_999) + 100_001
