@@ -44,26 +44,22 @@ def _optional_criteria_id(*candidates: Any) -> int | None:
 
 def _resolve_merchant_criteria_id(
     merchant_pg: Dict[str, Any],
-    store_pg: Dict[str, Any],
     mcrit_pg: Dict[str, Any],
 ) -> int | None:
-    """One optional merchant criteria id per tab (shared by merchant + store)."""
+    """One optional merchant criteria id per tab."""
     return _optional_criteria_id(
         mcrit_pg.get("criteria"),
         merchant_pg.get("criteria_table_id"),
-        store_pg.get("merchant_criteria_table_id"),
     )
 
 
 def _sync_merchant_criteria_refs(
     merchant_crit_id: int,
     merchant_pg: Dict[str, Any],
-    store_pg: Dict[str, Any],
     mcrit_pg: Dict[str, Any],
 ) -> None:
     mcrit_pg["criteria"] = merchant_crit_id
     merchant_pg["criteria_table_id"] = merchant_crit_id
-    store_pg["merchant_criteria_table_id"] = merchant_crit_id
 
 
 def _apply_optional_criteria_fks(
@@ -227,7 +223,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         merchant_pg["merchant_org"] = 6032
     org_default = merchant_pg.get("merchant_org", 6032)
     chain_status = transform_all({"chain_status": chain_pg.get("chain_status")}).get("chain_status", "A")
-    merchant_crit_id = _resolve_merchant_criteria_id(merchant_pg, store_pg, mcrit_pg)
+    merchant_crit_id = _resolve_merchant_criteria_id(merchant_pg, mcrit_pg)
     instrument_crit_id = _optional_criteria_id(
         icrit_pg.get("criteria_id"),
         icrit_pg.get("criteria"),
@@ -235,7 +231,7 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
         store_pg.get("instrument_criteria_table_id"),
     )
     if merchant_crit_id is not None:
-        _sync_merchant_criteria_refs(merchant_crit_id, merchant_pg, store_pg, mcrit_pg)
+        _sync_merchant_criteria_refs(merchant_crit_id, merchant_pg, mcrit_pg)
 
     merchant_id_for_tab: str | None = None
 
@@ -397,9 +393,10 @@ def _synthesize_one(parsed: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[st
             rec["store_printer_terminals"] = _str_or_none(store_pg.get("printer"))
         if not _is_blank(store_pg.get("terminal_information")):
             rec["store_pos_terminals"] = [{"terminal_id": _str_or_none(store_pg.get("terminal_information"))}]
+        store_merchant_crit_id = _optional_criteria_id(store_pg.get("merchant_criteria_table_id"))
         _apply_optional_criteria_fks(
             rec,
-            merchant_crit_id=merchant_crit_id,
+            merchant_crit_id=store_merchant_crit_id,
             instrument_crit_id=instrument_crit_id,
         )
         fill_missing_required(rec, SHEETS["store"]["schema"])
