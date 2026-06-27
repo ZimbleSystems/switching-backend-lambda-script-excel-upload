@@ -169,6 +169,22 @@ def _is_truthy(value: Optional[str]) -> bool:
 
 
 
+def _api_ssl_verify() -> bool | str:
+    """
+    TLS verification for API Gateway calls.
+
+    - Default: skip verification (False) for internal/self-signed API hosts.
+    - API_SSL_VERIFY=true: verify against system CAs.
+    - API_SSL_CA_BUNDLE=/path/to/ca.pem: trust a custom CA bundle instead.
+    """
+    ca_bundle = os.environ.get("API_SSL_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    if _is_truthy(os.environ.get("API_SSL_VERIFY", "false")):
+        return True
+    return False
+
+
 def _api_debug_enabled() -> bool:
 
     """Toggle via env API_DEBUG_LOG=true|false (default false)."""
@@ -263,12 +279,12 @@ class ApiGatewayClient:
 
         self.api_gateway_url = (api_gateway_url or os.environ.get("API_GATEWAY_URL", "")).rstrip("/")
 
+        ssl_verify = _api_ssl_verify()
         self.session = requests.Session()
+        self.session.verify = ssl_verify
         self._auth_session = requests.Session()
         self._access_token: Optional[str] = None
         self._token_expires_at = 0.0
-
-
 
         if _api_debug_enabled():
 
