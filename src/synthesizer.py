@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union
 
 from nested_builders import (
+    apply_store_location_identifiers,
     block_flag_to_bool,
     build_address,
     build_channels,
@@ -183,7 +184,9 @@ def _build_demographic(page: Dict[str, Any], demographic_id: str, demographic_ty
         "demographic_type": demographic_type,
     }
     addresses = build_address(page)
-    if addresses:
+    if demographic_type == "S":
+        rec["addresses"] = apply_store_location_identifiers(addresses)
+    elif addresses:
         rec["addresses"] = addresses
     phones = build_phones(page)
     if phones:

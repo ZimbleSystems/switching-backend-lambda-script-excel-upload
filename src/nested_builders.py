@@ -96,6 +96,12 @@ def _blocking_pair(intl: Any, value: Any, *, value_field: str) -> Optional[Dict[
     }
 
 
+STORE_DEFAULT_LOCATION_IDENTIFIERS: Dict[str, str] = {
+    "ID_CADENA": "005",
+    "ID_PLAZA": "02",
+}
+
+
 def block_flag_to_bool(v: Any) -> bool:
     if v in (True, False):
         return bool(v)
@@ -103,6 +109,19 @@ def block_flag_to_bool(v: Any) -> bool:
         return False
     s = str(v).upper()
     return s in ("E", "I", "YES", "Y", "TRUE", "1")
+
+
+def apply_store_location_identifiers(
+    addresses: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Every store demographic address gets fixed ID_CADENA / ID_PLAZA values."""
+    loc_ids = dict(STORE_DEFAULT_LOCATION_IDENTIFIERS)
+    if not addresses:
+        return [{"primary": True, "location_identifiers": loc_ids}]
+    for addr in addresses:
+        if isinstance(addr, dict):
+            addr["location_identifiers"] = loc_ids
+    return addresses
 
 
 def build_address(page: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
